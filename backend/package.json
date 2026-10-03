@@ -1,0 +1,26 @@
+{
+  "name": "mhacks-auto-ai",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx --env-file-if-exists=.env src/index.ts",
+    "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
+    "smoke:tts": "tsx --env-file-if-exists=.env src/dev/smokeTts.ts",
+    "fake-phone": "tsx --env-file-if-exists=.env src/dev/fakePhone.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@spectrum-ts/imessage": "^12.10.1",
+    "@spectrum-ts/telegram": "^12.10.1",
+    "spectrum-ts": "^12.10.1",
+    "ws": "^8.22.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/ws": "^8.18.2",
+    "tsx": "^4",
+    "typescript": "^5"
+  }
+}
