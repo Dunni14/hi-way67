@@ -1,0 +1,40 @@
+{
+  "factors": {
+    "agitated": 2.28,
+    "speeding": 2.55,
+    "drowsy": 1.22,
+    "phone": 1.28,
+    "distracted": 0.69,
+    "erratic": 0.69
+  },
+  "sleep": [
+    { "underHours": 4, "add": 2.44 },
+    { "underHours": 5, "add": 1.46 },
+    { "underHours": 6, "add": 0.64 },
+    { "underHours": 7, "add": 0.26 }
+  ],
+  "oddsCap": 50,
+  "context": { "kids_in_car": 0.15, "low_experience": 0.15 },
+  "levels": {
+    "drowsy": { "eyeClosure": 0.4, "eyeClosureFull": 0.3, "yawns": 0.2, "yawnsFull": 3, "engagement": 0.2, "breathing": 0.2, "breathingFull": 4 },
+    "agitated": { "stress": 0.6, "heartRate": 0.4, "heartRateFull": 25 },
+    "speedingFullMph": 20,
+    "distractedFullS": 4,
+    "erraticFull": 3
+  },
+  "tiers": { "nudge": 40, "warning": 70, "urgent": 85 },
+  "baselineWindows": 6,
+  "smoothingWindows": 3,
+  "holdWindows": 2,
+  "overrides": {
+    "microsleepS": 1.5,
+    "drowsyLevel": 0.6,
+    "drowsyFloorWindows": 3,
+    "drowsyUrgentWindows": 12,
+    "tier2UrgentWindows": 12
+  },
+  "cooldownS": 120,
+  "notifyCooldownS": 600,
+  "degradedAfterWindows": 3,
+  "feedback": { "falseAlarm": 0.95, "confirmed": 1.05, "min": 0.5, "max": 1.5 }
+}

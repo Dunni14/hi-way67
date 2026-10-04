@@ -8,17 +8,21 @@
     "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
     "smoke:tts": "tsx --env-file-if-exists=.env src/dev/smokeTts.ts",
     "fake-phone": "tsx --env-file-if-exists=.env src/dev/fakePhone.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/risk/*.test.ts"
   },
   "dependencies": {
     "@spectrum-ts/imessage": "^12.10.1",
     "@spectrum-ts/telegram": "^12.10.1",
+    "pg": "^8.23.1",
     "spectrum-ts": "^12.10.1",
     "ws": "^8.22.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@types/node": "^22",
+    "@types/pg": "^8.23.1",
     "@types/ws": "^8.18.2",
     "tsx": "^4",
     "typescript": "^5"
