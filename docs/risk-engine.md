@@ -6,7 +6,9 @@ Code: `backend/src/risk/` (pure core, service, Postgres store), `backend/src/htt
 
 ## Enabling it
 
-Set `DATABASE_URL` (any Postgres; Tiger Data / TimescaleDB works). Tables are created on boot. Without it the REST API is off and the legacy phone-computed path (`risk_window` / `alert` frames) keeps working. A TimescaleDB hypertable on `windows(ts)` is one commented statement in `risk/store/schema.ts`.
+Set `DATABASE_URL` (see `.env.example`; it points at the Tiger Data service). The operational tables (`drivers`, `trips`, `windows`, `events`) match [`backend/sql/01_schema.sql`](../backend/sql/01_schema.sql) and `risk/store/schema.ts` creates any that are missing on boot. The TimescaleDB parts (hypertables, `windows_30s` and `trip_summary_5m` aggregates, 7-day retention on `windows`) and the config tables (`02_seed.sql`) are applied once with the Tiger MCP or `psql`, not by the app. Without `DATABASE_URL` the REST API is off and the legacy phone-computed path (`risk_window` / `alert` frames) keeps working. Mapping notes: the API's `high_only` is stored as `high_risk_only`; `events.override` holds the `override_rules.rule_id` (microsleep 1, drowsy_sustained_3 2, drowsy_sustained_12 3, tier2_sustained_12 4); `windows.result` keeps the full evaluation for `/trips/{id}/state`. The engine still reads weights from `risk/weights.json`, not the config tables.
+
+**No database? Use the fake one.** `npm run dev:fake` (or `FAKE_DB=1`) runs the REST API on an in-process Postgres (PGlite, `src/dev/fakeDb.ts`) with the same schema, the seeded config tables, plain-view stand-ins for `windows_30s` / `trip_summary_5m`, and 12 deterministic trips (drivers `alex`, `sam`, `jo`; calm, drowsy, aggressive and phone-use segments, all four tiers) generated through the real `RiskService`, so events and grades are genuine. Try `GET /drivers/alex/trips` and `GET /trips/fake-alex-2/report`. If `DATABASE_URL` is set but unreachable, boot logs a warning and falls back to it. Data is in memory and regenerated each boot unless `FAKE_DB_DIR` is set. Timestamps are relative to boot, so the week of history always looks recent. `npm run seed:fake` prints a summary.
 
 ## Flow
 

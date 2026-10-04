@@ -42,6 +42,10 @@ export const config = {
 
   // Postgres (Tiger Data / Timescale compatible). Unset = risk REST API disabled.
   databaseUrl: optional("DATABASE_URL"),
+  // FAKE_DB=1 uses the in-process seeded Postgres (src/dev/fakeDb.ts) instead of DATABASE_URL.
+  // It is also the automatic fallback when DATABASE_URL is unreachable. FAKE_DB_DIR persists it to disk.
+  fakeDb: optional("FAKE_DB") === "1",
+  fakeDbDir: optional("FAKE_DB_DIR"),
   // Tiger Data for the adaptive-recommendation bandit. Unset = bandit off (needs DATABASE_URL too).
   tigerDatabaseUrl: optional("TIGER_DATABASE_URL"),
 
