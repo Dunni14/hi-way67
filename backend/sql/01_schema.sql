@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS drivers (
   has_family_voice boolean NOT NULL DEFAULT false,
   weight_overrides jsonb NOT NULL DEFAULT '{}',   -- factor -> multiplier 0.5..1.5
   profile          jsonb NOT NULL DEFAULT '{}',   -- {careIndex, scoredTrips, learnedShift}, see risk/profile.ts
+  share_location   boolean NOT NULL DEFAULT true, -- false: no lat/lon ever reaches the iMessage agent
   created_at       timestamptz NOT NULL DEFAULT now()
 );
 
@@ -132,6 +133,11 @@ CREATE TABLE IF NOT EXISTS windows (
   swerves               int,
   speed_mph             double precision,
   speed_limit_mph       double precision,
+  -- GPS-derived inputs (see gps/features.ts). Raw fixes live in gps_samples.
+  gps_speeding          double precision,   -- 0..1, set whenever the client sent a gps field
+  gps_erratic           double precision,   -- 0..1
+  gps_stopped           boolean,            -- good GPS and under the stop speed
+  limit_source          text,               -- osm, fallback or none
   -- computed levels, 0..1
   drowsy                double precision,
   agitated              double precision,
@@ -150,6 +156,12 @@ CREATE TABLE IF NOT EXISTS windows (
 SELECT create_hypertable('windows', 'ts',
   chunk_time_interval => INTERVAL '1 day', if_not_exists => TRUE);
 CREATE INDEX IF NOT EXISTS windows_driver_idx ON windows (driver_id, ts DESC);
+-- Databases created before GPS support: CREATE TABLE IF NOT EXISTS above does not add columns.
+ALTER TABLE windows ADD COLUMN IF NOT EXISTS gps_speeding double precision;
+ALTER TABLE windows ADD COLUMN IF NOT EXISTS gps_erratic double precision;
+ALTER TABLE windows ADD COLUMN IF NOT EXISTS gps_stopped boolean;
+ALTER TABLE windows ADD COLUMN IF NOT EXISTS limit_source text;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS share_location boolean NOT NULL DEFAULT true;
 
 -- Every time the decision tree fires an action.
 CREATE TABLE IF NOT EXISTS events (
@@ -229,6 +241,28 @@ CREATE TABLE IF NOT EXISTS bandit_models (
   PRIMARY KEY (driver_id, action)
 );
 
+-- Phone GPS fixes that passed the accuracy and speed checks, written only during an active trip.
+-- Each fix carries the window's posted limit. accel_mps2 and heading_rate_dps are against the previous
+-- fix of the same window (heading only above the heading speed), filled in by the app so the 10 s
+-- aggregate below can take their max. Raw fixes expire after 7 days (retention policy at the end).
+CREATE TABLE IF NOT EXISTS gps_samples (
+  time             timestamptz NOT NULL,
+  trip_id          text NOT NULL,
+  driver_id        text NOT NULL,
+  lat              double precision NOT NULL,
+  lon              double precision NOT NULL,
+  speed_mps        real,
+  heading_deg      real,
+  h_accuracy_m     real,
+  accel_mps2       real,
+  heading_rate_dps real,
+  limit_mps        real,
+  limit_source     text               -- osm, fallback or none
+);
+SELECT create_hypertable('gps_samples', 'time',
+  chunk_time_interval => INTERVAL '1 day', if_not_exists => TRUE);
+CREATE INDEX IF NOT EXISTS gps_samples_trip_idx ON gps_samples (trip_id, time DESC);
+
 -- =====================================================================
 -- CONTINUOUS AGGREGATES
 -- =====================================================================
@@ -283,8 +317,35 @@ SELECT add_continuous_aggregate_policy('trip_summary_5m',
   schedule_interval => INTERVAL '5 minutes',
   if_not_exists     => TRUE);
 
+-- 10 s GPS rollup, one row per signal window. A continuous aggregate cannot take a median or a
+-- difference between consecutive rows, so speed_avg_mps is a mean (the app scores on the median) and
+-- accel and heading rate are the max of the per-fix columns. gps_ok is fixes >= 3.
+CREATE MATERIALIZED VIEW IF NOT EXISTS gps_10s
+WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
+SELECT
+  time_bucket(INTERVAL '10 seconds', time) AS bucket,
+  trip_id,
+  driver_id,
+  avg(speed_mps)        AS speed_avg_mps,
+  max(speed_mps)        AS speed_max_mps,
+  max(accel_mps2)       AS accel_max_mps2,
+  max(heading_rate_dps) AS heading_rate_dps,
+  last(lat, time)       AS lat,
+  last(lon, time)       AS lon,
+  count(*)              AS fixes
+FROM gps_samples
+GROUP BY bucket, trip_id, driver_id
+WITH NO DATA;
+
+SELECT add_continuous_aggregate_policy('gps_10s',
+  start_offset      => INTERVAL '10 minutes',
+  end_offset        => INTERVAL '10 seconds',
+  schedule_interval => INTERVAL '10 seconds',
+  if_not_exists     => TRUE);
+
 -- =====================================================================
 -- PRIVACY: raw vitals expire, summaries stay
 -- =====================================================================
 
 SELECT add_retention_policy('windows', INTERVAL '7 days', if_not_exists => TRUE);
+SELECT add_retention_policy('gps_samples', INTERVAL '7 days', if_not_exists => TRUE);

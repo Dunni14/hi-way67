@@ -42,7 +42,7 @@ async function openRiskStore(): Promise<PgRiskStore | undefined> {
 let riskRoutes: ReturnType<typeof createRiskRoutes> | undefined;
 const riskStore = await openRiskStore();
 if (riskStore) {
-  riskRoutes = createRiskRoutes(new RiskService(riskStore, undefined, (_tripId, ev) => onRiskEvaluation(ev)));
+  riskRoutes = createRiskRoutes(new RiskService(riskStore, undefined, (_tripId, ev, extra) => onRiskEvaluation(ev, extra)));
 } else {
   console.log("[risk] REST API disabled (set DATABASE_URL or FAKE_DB=1)");
 }

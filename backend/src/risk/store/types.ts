@@ -4,9 +4,9 @@ import type { ReportCard } from "../card.ts";
 import type { Observation } from "../expression.ts";
 import type { DriverProfile } from "../profile.ts";
 import type { Baseline } from "../smoothing.ts";
-import type { Action, Evaluation, Override, SharingMode, SignalWindow, Tier, WeightMults } from "../types.ts";
+import type { Action, Evaluation, Override, SharingMode, EngineWindow, Tier, WeightMults } from "../types.ts";
 
-export type DriverRow = { id: string; sharingMode: SharingMode; weightOverrides: Partial<WeightMults>; profile: Partial<DriverProfile> };
+export type DriverRow = { id: string; sharingMode: SharingMode; shareLocation: boolean; weightOverrides: Partial<WeightMults>; profile: Partial<DriverProfile> };
 
 export type TripRow = {
   id: string;
@@ -19,7 +19,7 @@ export type TripRow = {
   baseline: Baseline | null;
 };
 
-export type WindowRow = { tripId: string; ts: string; raw: SignalWindow; result: Evaluation; score: number; tier: Tier };
+export type WindowRow = { tripId: string; ts: string; raw: EngineWindow; result: Evaluation; score: number; tier: Tier };
 
 export type EventRow = { tripId: string; ts: string; tier: Tier; actions: Action[]; override: Override | null };
 
@@ -28,9 +28,23 @@ export type CardRow = { tripId: string; driverId: string; createdAt: string; car
 /** One logged decision for later reinforcement learning: 8-number context, action taken, reward once known. */
 export type DecisionRow = { tripId: string; ts: string; tier: Tier; dominant: string; action: Action; context: number[]; scores: Record<string, unknown> };
 
+/** One good GPS fix of an active trip, with the window's limit and the per-fix motion used by the 10 s aggregate. */
+export type GpsSampleRow = {
+  time: string;
+  lat: number;
+  lon: number;
+  speedMps: number | null;
+  headingDeg: number | null;
+  hAccuracyM: number | null;
+  accelMps2: number | null;
+  headingRateDps: number | null;
+  limitMps: number | null;
+  limitSource: string | null;
+};
+
 export interface RiskStore {
-  /** Create the driver if missing; returns the stored row. */
-  upsertDriver(id: string, sharingMode?: SharingMode): Promise<DriverRow>;
+  /** Create the driver if missing; returns the stored row. Omitted settings keep their stored value. */
+  upsertDriver(id: string, sharingMode?: SharingMode, shareLocation?: boolean): Promise<DriverRow>;
   getDriver(id: string): Promise<DriverRow | null>;
   setWeightOverrides(id: string, overrides: Partial<WeightMults>): Promise<void>;
   setProfile(id: string, profile: DriverProfile): Promise<void>;
@@ -51,6 +65,9 @@ export interface RiskStore {
 
   addObservation(o: Observation & { tripId: string }): Promise<void>;
   getObservations(tripId: string): Promise<Observation[]>; // ascending by ts
+
+  addGpsSamples(tripId: string, samples: GpsSampleRow[]): Promise<void>;
+  getGpsSamples(tripId: string): Promise<GpsSampleRow[]>; // ascending by time
 
   saveCard(c: CardRow): Promise<void>;
   getCard(tripId: string): Promise<CardRow | null>;

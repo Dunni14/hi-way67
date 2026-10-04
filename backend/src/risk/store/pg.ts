@@ -5,7 +5,7 @@ import type { Baseline } from "../smoothing.ts";
 import type { Observation } from "../expression.ts";
 import type { DriverProfile } from "../profile.ts";
 import type { Action } from "../types.ts";
-import type { CardRow, DecisionRow, DriverRow, EventRow, RiskStore, TripRow, WindowRow } from "./types.ts";
+import type { CardRow, DecisionRow, DriverRow, EventRow, GpsSampleRow, RiskStore, TripRow, WindowRow } from "./types.ts";
 import type { Override, SharingMode } from "../types.ts";
 
 export interface Db {
@@ -24,7 +24,7 @@ const OVERRIDE_IDS: Record<Override, number> = { microsleep: 1, drowsy_sustained
 const overrideFromId = (id: number | null): Override | null =>
   id == null ? null : ((Object.keys(OVERRIDE_IDS) as Override[]).find((k) => OVERRIDE_IDS[k] === id) ?? null);
 
-const toDriver = (r: any): DriverRow => ({ id: r.driver_id, sharingMode: sharingFromDb(r.sharing_mode), weightOverrides: r.weight_overrides ?? {}, profile: r.profile ?? {} });
+const toDriver = (r: any): DriverRow => ({ id: r.driver_id, sharingMode: sharingFromDb(r.sharing_mode), shareLocation: r.share_location ?? true, weightOverrides: r.weight_overrides ?? {}, profile: r.profile ?? {} });
 const toTrip = (r: any): TripRow => ({
   id: r.trip_id,
   driverId: r.driver_id,
@@ -54,6 +54,10 @@ const toWindow = (r: any): WindowRow => ({
     swerves: r.swerves,
     speed_mph: r.speed_mph,
     speed_limit_mph: r.speed_limit_mph,
+    gps_speeding: r.gps_speeding,
+    gps_erratic: r.gps_erratic,
+    gps_stopped: r.gps_stopped,
+    limit_source: r.limit_source,
   },
   result: r.result,
   score: r.score,
@@ -69,12 +73,12 @@ export class PgRiskStore implements RiskStore {
     for (const stmt of SCHEMA_SQL.split(";").map((s) => s.trim()).filter(Boolean)) await this.db.query(stmt);
   }
 
-  async upsertDriver(id: string, sharingMode?: SharingMode) {
+  async upsertDriver(id: string, sharingMode?: SharingMode, shareLocation?: boolean) {
     const { rows } = await this.db.query(
-      `INSERT INTO drivers (driver_id, sharing_mode) VALUES ($1, COALESCE($2, 'high_risk_only'))
-       ON CONFLICT (driver_id) DO UPDATE SET sharing_mode = COALESCE($2, drivers.sharing_mode)
+      `INSERT INTO drivers (driver_id, sharing_mode, share_location) VALUES ($1, COALESCE($2, 'high_risk_only'), COALESCE($3, TRUE))
+       ON CONFLICT (driver_id) DO UPDATE SET sharing_mode = COALESCE($2, drivers.sharing_mode), share_location = COALESCE($3, drivers.share_location)
        RETURNING *`,
-      [id, sharingToDb(sharingMode)],
+      [id, sharingToDb(sharingMode), shareLocation ?? null],
     );
     return toDriver(rows[0]);
   }
@@ -119,13 +123,15 @@ export class PgRiskStore implements RiskStore {
       `INSERT INTO windows (ts, trip_id, driver_id,
          face_visible, heart_rate, breathing_rate, engagement, eye_closure_frac, longest_eye_closure_s, yawns,
          emotion_stress, gaze_off_road_s, phone_in_hand, hard_brakes, swerves, speed_mph, speed_limit_mph,
+         gps_speeding, gps_erratic, gps_stopped, limit_source,
          drowsy, agitated, speeding, phone, distracted, erratic,
          score, tier, dominant, degraded, result)
        SELECT $1, $2, t.driver_id,
          $3,$4,$5,$6,$7,$8,$9,
          $10,$11,$12,$13,$14,$15,$16,
-         $17,$18,$19,$20,$21,$22,
-         $23,$24,$25,$26,$27::jsonb
+         $17,$18,$19,$20,
+         $21,$22,$23,$24,$25,$26,
+         $27,$28,$29,$30,$31::jsonb
        FROM trips t WHERE t.trip_id = $2
        ON CONFLICT DO NOTHING RETURNING trip_id`,
       [
@@ -135,6 +141,7 @@ export class PgRiskStore implements RiskStore {
         r.emotion_stress ?? null, r.gaze_off_road_s ?? null, r.phone_in_hand ?? null,
         r.hard_brakes == null ? null : Math.round(r.hard_brakes), r.swerves == null ? null : Math.round(r.swerves),
         r.speed_mph ?? null, r.speed_limit_mph ?? null,
+        r.gps_speeding ?? null, r.gps_erratic ?? null, r.gps_stopped ?? null, r.limit_source ?? null,
         e.levels.drowsy, e.levels.agitated, e.levels.speeding, e.levels.phone, e.levels.distracted, e.levels.erratic,
         w.score, w.tier, e.dominant, e.degraded, JSON.stringify(e),
       ],
@@ -188,6 +195,26 @@ export class PgRiskStore implements RiskStore {
       (r): Observation => ({
         ts: iso(r.ts), expression: r.expression, intensity: r.intensity, face_visible: r.face_visible, stress: r.stress,
         engagement: r.engagement, eye_closure_frac: r.eye_closure_frac, yawns: r.yawns, gaze_off_road_s: r.gaze_off_road_s,
+      }),
+    );
+  }
+
+  async addGpsSamples(tripId: string, samples: GpsSampleRow[]) {
+    for (const s of samples) {
+      await this.db.query(
+        `INSERT INTO gps_samples (time, trip_id, driver_id, lat, lon, speed_mps, heading_deg, h_accuracy_m, accel_mps2, heading_rate_dps, limit_mps, limit_source)
+         SELECT $1, $2, t.driver_id, $3, $4, $5, $6, $7, $8, $9, $10, $11 FROM trips t WHERE t.trip_id = $2`,
+        [s.time, tripId, s.lat, s.lon, s.speedMps, s.headingDeg, s.hAccuracyM, s.accelMps2, s.headingRateDps, s.limitMps, s.limitSource],
+      );
+    }
+  }
+
+  async getGpsSamples(tripId: string) {
+    const { rows } = await this.db.query(`SELECT * FROM gps_samples WHERE trip_id = $1 ORDER BY time ASC`, [tripId]);
+    return rows.map(
+      (r): GpsSampleRow => ({
+        time: iso(r.time), lat: r.lat, lon: r.lon, speedMps: r.speed_mps, headingDeg: r.heading_deg, hAccuracyM: r.h_accuracy_m,
+        accelMps2: r.accel_mps2, headingRateDps: r.heading_rate_dps, limitMps: r.limit_mps, limitSource: r.limit_source,
       }),
     );
   }

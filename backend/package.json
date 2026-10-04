@@ -11,7 +11,7 @@
     "seed:fake": "tsx src/dev/seedFake.ts",
     "fake-phone": "tsx --env-file-if-exists=.env src/dev/fakePhone.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/risk/*.test.ts"
+    "test": "tsx --test src/risk/*.test.ts src/gps/*.test.ts"
   },
   "dependencies": {
     "@spectrum-ts/imessage": "^12.10.1",

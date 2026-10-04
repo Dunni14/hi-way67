@@ -1,4 +1,6 @@
 // Spoken lines. Templates (not LLM) so alerts are instant and predictable.
+import { mpsToMph } from "../gps/types.ts";
+import type { Evaluation } from "../risk/types.ts";
 import type { Dominant, Tier } from "../ws/protocol.ts";
 
 const pick = <T>(xs: T[]): T => xs[Math.floor(Math.random() * xs.length)]!;
@@ -36,8 +38,39 @@ const ALERTS: Record<Tier, Record<Dominant, string[]>> = {
   },
 };
 
-export function alertLine(tier: Tier, dominant: Dominant): string {
-  return pick(ALERTS[tier][dominant]);
+export type AlertOpts = {
+  /** Miles to the next rest area or fuel station ahead. A parameter on the existing rest recommendation, not a separate action. */
+  restMiles?: number | null;
+};
+
+export function milesPhrase(miles: number): string {
+  if (miles < 0.95) return "less than a mile";
+  if (miles < 1.05) return "1 mile";
+  return `${miles < 10 ? Math.round(miles * 10) / 10 : Math.round(miles)} miles`;
+}
+
+export function alertLine(tier: Tier, dominant: Dominant, opts: AlertOpts = {}): string {
+  const base = pick(ALERTS[tier][dominant]);
+  if (dominant !== "drowsy" || tier === 40 || opts.restMiles == null) return base;
+  const how = milesPhrase(opts.restMiles);
+  return tier === 70 ? `${base} The next stop is ${how} ahead.` : `${base} Pull over at the next stop, ${how} ahead.`;
+}
+
+/** Speeding nudge that names the posted limit. */
+export function speedingLine(limitMph: number, speedMph: number): string {
+  return `Limit here is ${Math.round(limitMph)}. You are at ${Math.round(speedMph)}.`;
+}
+
+/**
+ * The speeding nudge for a tier 1 reckless alert, when speeding is what is driving it and the limit and
+ * speed are known. Null otherwise, and the normal reminder plays.
+ */
+export function speedingNudge(ev: Evaluation): string | null {
+  const g = ev.gps;
+  if (ev.tier !== 1 || ev.dominant !== "reckless" || !g || g.stopped || g.limit_mph == null || g.speed_mps == null) return null;
+  const L = ev.levels;
+  if (!(L.speeding > 0) || L.speeding < Math.max(L.agitated, L.phone, L.distracted, L.erratic)) return null;
+  return speedingLine(g.limit_mph, mpsToMph(g.speed_mps));
 }
 
 export function permissionLine(): string {

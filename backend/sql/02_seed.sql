@@ -101,7 +101,22 @@ INSERT INTO settings (key, value, note) VALUES
   ('bandit_reward_stop_bonus',    '1',     'Driver stopped 60 s or more after a drowsy intervention'),
   ('bandit_reward_false_alarm',   '-0.5',  'Driver gave false_alarm feedback'),
   ('bandit_reward_tier_up',       '-0.5',  'Tier rose within the reward window'),
-  ('night_hours',                 '{"start": 22, "end": 6}', 'Local time, end exclusive')
+  ('night_hours',                 '{"start": 22, "end": 6}', 'Local time, end exclusive'),
+  -- GPS. All hand-set, none from the Dingus paper. Mirrors risk/weights.json -> gps (the engine reads the JSON).
+  ('gps_speeding_over_full',      '0.3',   'speeding = clamp((speed - limit) / limit / this, 0, 1)'),
+  ('gps_accuracy_max_m',          '30',    'Drop fixes with horizontal accuracy worse than this'),
+  ('gps_min_good_fixes',          '3',     'gps_ok needs this many good fixes in the 10 s window'),
+  ('gps_heading_min_speed_mps',   '3',     'Heading is ignored below this speed'),
+  ('gps_erratic_accel_low',       '2.5',   'm/s^2: erratic acceleration level is 0 here'),
+  ('gps_erratic_accel_full',      '5',     'm/s^2: erratic acceleration level is 1 here'),
+  ('gps_erratic_heading_low',     '20',    'deg/s: erratic heading level is 0 here'),
+  ('gps_erratic_heading_full',    '45',    'deg/s: erratic heading level is 1 here'),
+  ('gps_fallback_limits_mph',     '{"motorway": 70, "trunk": 55, "primary": 55, "secondary": 45, "tertiary": 45, "residential": 25, "unclassified": 25}', 'Posted limit by OSM highway class when a way has no maxspeed. Flagged in the report card when used'),
+  ('gps_trip_start_speed_mps',    '4',     'A trip starts when speed stays above this ...'),
+  ('gps_trip_start_hold_seconds', '20',    '... for this long'),
+  ('gps_trip_stop_speed_mps',     '1',     'A trip ends when speed stays under this ...'),
+  ('gps_trip_stop_hold_seconds',  '300',   '... for this long. Also the stopped threshold: no speeding or erratic scoring under it'),
+  ('gps_stale_fix_seconds',       '60',    'Tell contacts when the last fix is older than this')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, note = EXCLUDED.note;
 
 -- ---------------------------------------------------------------------

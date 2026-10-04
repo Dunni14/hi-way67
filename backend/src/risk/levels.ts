@@ -1,20 +1,24 @@
 // Spec §4: state levels, each 0..1. Null input = no evidence = contributes 0.
 import type { RiskConfig } from "./config.ts";
 import type { Baseline } from "./smoothing.ts";
-import type { Levels, SignalWindow } from "./types.ts";
+import type { Levels, EngineWindow } from "./types.ts";
 
 const clamp01 = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0);
 const n = (v: number | null | undefined) => (typeof v === "number" ? v : null);
 
-export function computeLevels(w: SignalWindow, base: Baseline, cfg: RiskConfig, opts: { faceless?: boolean } = {}): Levels {
+export function computeLevels(w: EngineWindow, base: Baseline, cfg: RiskConfig, opts: { faceless?: boolean } = {}): Levels {
   const L = cfg.levels;
   const speed = n(w.speed_mph);
   const limit = n(w.speed_limit_mph);
   const brakes = n(w.hard_brakes) ?? 0;
   const swerves = n(w.swerves) ?? 0;
 
-  const speeding = speed != null && limit != null ? clamp01(Math.max(speed - limit, 0) / L.speedingFullMph) : 0;
-  const erratic = clamp01((brakes + swerves) / L.erraticFull);
+  // GPS (gps/features.ts) is authoritative once the client sends a `gps` field; otherwise the legacy
+  // mph-over formula runs on the speed and limit the client sent. Neither is scored while stopped.
+  const stopped = w.gps_stopped === true;
+  const legacySpeeding = speed != null && limit != null ? clamp01(Math.max(speed - limit, 0) / L.speedingFullMph) : 0;
+  const speeding = stopped ? 0 : w.gps_speeding != null ? clamp01(w.gps_speeding) : legacySpeeding;
+  const erratic = stopped ? 0 : Math.max(clamp01((brakes + swerves) / L.erraticFull), clamp01(w.gps_erratic ?? 0));
 
   // Face not visible for a while: only speed and motion are trustworthy.
   if (opts.faceless) return { drowsy: 0, agitated: 0, speeding, phone: 0, distracted: 0, erratic };

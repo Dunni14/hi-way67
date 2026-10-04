@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS drivers (
   has_family_voice BOOLEAN NOT NULL DEFAULT FALSE,
   weight_overrides JSONB NOT NULL DEFAULT '{}',
   profile          JSONB NOT NULL DEFAULT '{}',
+  share_location   BOOLEAN NOT NULL DEFAULT TRUE,
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -47,6 +48,10 @@ CREATE TABLE IF NOT EXISTS windows (
   swerves               INT,
   speed_mph             DOUBLE PRECISION,
   speed_limit_mph       DOUBLE PRECISION,
+  gps_speeding          DOUBLE PRECISION,
+  gps_erratic           DOUBLE PRECISION,
+  gps_stopped           BOOLEAN,
+  limit_source          TEXT,
   drowsy                DOUBLE PRECISION,
   agitated              DOUBLE PRECISION,
   speeding              DOUBLE PRECISION,
@@ -62,6 +67,11 @@ CREATE TABLE IF NOT EXISTS windows (
 );
 ALTER TABLE windows ADD COLUMN IF NOT EXISTS result JSONB;
 ALTER TABLE drivers ADD COLUMN IF NOT EXISTS profile JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS share_location BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE windows ADD COLUMN IF NOT EXISTS gps_speeding DOUBLE PRECISION;
+ALTER TABLE windows ADD COLUMN IF NOT EXISTS gps_erratic DOUBLE PRECISION;
+ALTER TABLE windows ADD COLUMN IF NOT EXISTS gps_stopped BOOLEAN;
+ALTER TABLE windows ADD COLUMN IF NOT EXISTS limit_source TEXT;
 CREATE INDEX IF NOT EXISTS windows_driver_idx ON windows (driver_id, ts DESC);
 
 CREATE TABLE IF NOT EXISTS events (
@@ -118,4 +128,20 @@ CREATE TABLE IF NOT EXISTS bandit_events (
   reward_ts  TIMESTAMPTZ,
   PRIMARY KEY (trip_id, ts)
 );
+
+CREATE TABLE IF NOT EXISTS gps_samples (
+  time             TIMESTAMPTZ NOT NULL,
+  trip_id          TEXT NOT NULL,
+  driver_id        TEXT NOT NULL,
+  lat              DOUBLE PRECISION NOT NULL,
+  lon              DOUBLE PRECISION NOT NULL,
+  speed_mps        REAL,
+  heading_deg      REAL,
+  h_accuracy_m     REAL,
+  accel_mps2       REAL,
+  heading_rate_dps REAL,
+  limit_mps        REAL,
+  limit_source     TEXT
+);
+CREATE INDEX IF NOT EXISTS gps_samples_trip_idx ON gps_samples (trip_id, time DESC);
 `;

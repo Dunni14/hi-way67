@@ -10,6 +10,7 @@
 // for attention (max of distracted, phone), speed, smoothness (erratic), alertness (drowsy) and
 // composure (agitated). Confidence is scoredWindows / fullConfidenceWindows, capped at 1.
 import type { RiskConfig } from "./config.ts";
+import type { GpsCard } from "../gps/route.ts";
 import { EXPRESSIONS, type Expression, type Observation } from "./expression.ts";
 import type { Evaluation, Tier } from "./types.ts";
 
@@ -31,6 +32,8 @@ export type ReportCard = {
   categories: Record<Category, number>;
   expression: { shares: Record<Expression, number>; dominant: Expression | null };
   counts: { hard_brakes: number; swerves: number; phone_windows: number; speeding_windows: number };
+  /** Route, alert markers and limit stats; null when the trip had no GPS. Not part of `features`. */
+  gps: GpsCard | null;
   /** Fixed-order numeric vector for offline learning; names in `feature_names`. */
   features: number[];
   feature_names: string[];
@@ -58,7 +61,7 @@ export function letterOf(score: number, cfg: RiskConfig): Letter {
   return score >= G.A ? "A" : score >= G.B ? "B" : score >= G.C ? "C" : score >= G.D ? "D" : "F";
 }
 
-export function buildCard(windows: CardWindow[], observations: Observation[], ctx: CardContext, cfg: RiskConfig): ReportCard {
+export function buildCard(windows: CardWindow[], observations: Observation[], ctx: CardContext, cfg: RiskConfig, gps: GpsCard | null = null): ReportCard {
   const R = cfg.report;
   const scored = windows.slice(cfg.baselineWindows);
   const n = scored.length;
@@ -116,6 +119,7 @@ export function buildCard(windows: CardWindow[], observations: Observation[], ct
       phone_windows: scored.filter((w) => w.raw.phone_in_hand).length,
       speeding_windows: scored.filter((w) => w.result.levels.speeding > 0).length,
     },
+    gps,
     features,
     feature_names: FEATURE_NAMES,
   };

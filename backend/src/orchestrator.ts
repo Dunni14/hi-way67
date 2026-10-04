@@ -5,7 +5,7 @@ import type { TripStore } from "./trip/store.ts";
 import type { PhoneMsg, Tier, Dominant } from "./ws/protocol.ts";
 import { sendToPhone } from "./ws/server.ts";
 import { driverQueue } from "./voice/driverQueue.ts";
-import { ackLine, alertLine, messageLine, permissionLine, roastLine } from "./voice/lines.ts";
+import { ackLine, alertLine, messageLine, permissionLine, roastLine, speedingNudge } from "./voice/lines.ts";
 import { post, dm, type Inbound } from "./agent/spectrum.ts";
 import { classify, shortenForSpeech } from "./agent/classifier.ts";
 import { answerQuestion } from "./agent/answer.ts";
@@ -13,10 +13,15 @@ import { parseDriverUtterance } from "./agent/driverIntent.ts";
 import { roast } from "./agent/roast.ts";
 import { allContacts } from "./agent/contacts.ts";
 import type { Evaluation } from "./risk/types.ts";
+import type { EvaluationExtra } from "./risk/service.ts";
+import { guardianAlertText } from "./agent/alertText.ts";
+import { RestStopFinder, milesAhead } from "./gps/restStop.ts";
+import { riskConfig } from "./risk/config.ts";
+import type { LocationFix } from "./gps/types.ts";
 
 const LISTEN_MS = 5000;
 
-export function createOrchestrator(store: TripStore) {
+export function createOrchestrator(store: TripStore, restStops = new RestStopFinder(riskConfig)) {
   const d = () => trip.driverName;
   let pendingPermission: { dominant: Dominant } | null = null;
 
@@ -28,12 +33,14 @@ export function createOrchestrator(store: TripStore) {
         if (msg.driverName) trip.driverName = msg.driverName;
         trip.sharingMode = msg.sharingMode;
         trip.kidsInCar = msg.kidsInCar;
+        trip.shareLocation = msg.shareLocation;
         console.log(`[phone] hello: ${trip.driverName}, sharing=${trip.sharingMode}, kids=${trip.kidsInCar}`);
         return;
 
       case "settings":
         if (msg.sharingMode) trip.sharingMode = msg.sharingMode;
         if (msg.kidsInCar !== undefined) trip.kidsInCar = msg.kidsInCar;
+        if (msg.shareLocation !== undefined) trip.shareLocation = msg.shareLocation;
         return;
 
       case "trip_start":
@@ -104,13 +111,37 @@ export function createOrchestrator(store: TripStore) {
    * already applied hold, cooldown and the kids bump, so only act when it asks
    * for a voice action, and don't bump again.
    */
-  async function onRiskEvaluation(ev: Evaluation) {
+  async function onRiskEvaluation(ev: Evaluation, extra?: EvaluationExtra) {
+    if (extra) {
+      trip.shareLocation = extra.shareLocation;
+      if (extra.location) trip.setFix(extra.location);
+      // GPS decided the trip started moving or stopped for good.
+      if (extra.lifecycle.includes("started")) await onTripStart();
+      if (extra.lifecycle.includes("ended")) await onTripEnd();
+    }
+    const fix = extra?.location ?? trip.lastFix;
+    // Warm the rest stop cache while the driver is only mildly drowsy, so tier 2 and 3 can name a stop without waiting.
+    if (ev.dominant === "drowsy" && ev.tier >= 1 && fix) void restStops.next(fix);
+
     if (ev.tier === 0 || !ev.actions.some((a) => a.startsWith("voice_"))) return;
     const tier: Tier = ev.tier === 3 ? 85 : ev.tier === 2 ? 70 : 40;
-    await onAlert(tier, ev.dominant, ev.score, { bumped: true });
+    await onAlert(tier, ev.dominant, ev.score, {
+      bumped: true,
+      speedingLine: speedingNudge(ev),
+      restMiles: ev.dominant === "drowsy" && tier >= 70 ? await restMilesAhead(fix) : null,
+    });
   }
 
-  async function onAlert(phoneTier: Tier, dominant: Dominant, R: number, opts: { bumped?: boolean } = {}) {
+  /** Miles to the next stop ahead, from the cache or a short wait; null when unknown. The alert never waits long for it. */
+  async function restMilesAhead(fix: LocationFix | null): Promise<number | null> {
+    if (!fix) return null;
+    let timer: NodeJS.Timeout | undefined;
+    const limit = new Promise<null>((resolve) => (timer = setTimeout(() => resolve(null), riskConfig.gps.restStop.timeoutMs / 2)));
+    const stop = await Promise.race([restStops.next(fix), limit]).finally(() => clearTimeout(timer));
+    return stop ? milesAhead(stop) : null;
+  }
+
+  async function onAlert(phoneTier: Tier, dominant: Dominant, R: number, opts: { bumped?: boolean; speedingLine?: string | null; restMiles?: number | null } = {}) {
     // Kids in the car bump the 70 tier up a level (README §4). Alerts from the
     // risk engine arrive already bumped.
     const tier: Tier = !opts.bumped && phoneTier === 70 && trip.kidsInCar ? 85 : phoneTier;
@@ -119,11 +150,12 @@ export function createOrchestrator(store: TripStore) {
 
     if (tier < 85) {
       // Mid-tier: voice only, never the group chat.
-      driverQueue.enqueue({ text: alertLine(tier, dominant), tier, context: "checkin", listenAfterMs: LISTEN_MS, priority: true });
+      const text = (tier === 40 && dominant === "reckless" && opts.speedingLine) || alertLine(tier, dominant, { restMiles: opts.restMiles });
+      driverQueue.enqueue({ text, tier, context: "checkin", listenAfterMs: LISTEN_MS, priority: true });
       return;
     }
 
-    driverQueue.enqueue({ text: alertLine(85, dominant), tier: 85, context: "checkin", listenAfterMs: 0, priority: true });
+    driverQueue.enqueue({ text: alertLine(85, dominant, { restMiles: opts.restMiles }), tier: 85, context: "checkin", listenAfterMs: 0, priority: true });
     if (trip.sharingMode === "never") {
       pendingPermission = { dominant };
       driverQueue.enqueue({ text: permissionLine(), tier: 85, context: "permission", listenAfterMs: LISTEN_MS });
@@ -134,11 +166,8 @@ export function createOrchestrator(store: TripStore) {
 
   async function escalate(dominant: Dominant) {
     trip.lastHighAlertAt = Date.now();
-    const link = trip.mapsLink();
-    await post(
-      `⚠️ ${d()} is at high risk (${dominant}). I've told them to pull over.${link ? ` Location: ${link}` : ""}`,
-      "guardian",
-    ).catch(logPostError);
+    await trip.resolvePlace(); // road and city for the text; falls back to the link alone
+    await post(guardianAlertText(d(), dominant, trip.locationText()), "guardian").catch(logPostError);
     if (dominant === "drowsy" && !roast.active) {
       roast.start();
       await post(roast.callText()).catch(logPostError);

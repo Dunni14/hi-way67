@@ -10,10 +10,17 @@ const HIGH_ALERT_SHARE_MS = 15 * 60_000;
 
 export function tripFacts(role: Role, now = Date.now()): string[] {
   const d = trip.driverName;
-  if (!trip.active) return [`${d} is not on a drive right now.`];
+  const highRecent = now - trip.lastHighAlertAt < HIGH_ALERT_SHARE_MS;
+  if (!trip.active) {
+    // After the trip the guardians can still ask where it ended, under the same sharing rules.
+    const facts = [`${d} is not on a drive right now.`];
+    const end = trip.endLocationText();
+    const mayShare = trip.sharingMode === "always" || (trip.sharingMode === "high_only" && highRecent);
+    if (role === "guardian" && end && mayShare) facts.push(end);
+    return facts;
+  }
   if (trip.sharingMode === "never") return [`${d} has trip sharing turned off.`];
 
-  const highRecent = now - trip.lastHighAlertAt < HIGH_ALERT_SHARE_MS;
   if (trip.sharingMode === "high_only" && !highRecent) {
     return [`${d} is driving.`, `${d} only shares details when something is wrong, and everything looks fine.`];
   }
@@ -26,8 +33,8 @@ export function tripFacts(role: Role, now = Date.now()): string[] {
   if (yawns) facts.push(`${yawns} yawns in the last 10 minutes.`);
   if (trip.lastAlert) facts.push(`Last warning: ${Math.round((now - trip.lastAlert.at) / 60_000)} minutes ago (${trip.lastAlert.dominant}).`);
   if (role === "guardian") {
-    const link = trip.mapsLink();
-    if (link) facts.push(`Location: ${link}`);
+    const loc = trip.locationText(now);
+    if (loc) facts.push(`Location: ${loc.replace("\n", " ")}`);
   } else {
     facts.push(`(The asker is a friend, not a guardian: do not share location.)`);
   }
@@ -35,6 +42,7 @@ export function tripFacts(role: Role, now = Date.now()): string[] {
 }
 
 export async function answerQuestion(question: string, askerName: string, role: Role): Promise<string> {
+  if (role === "guardian") await trip.resolvePlace(); // road and city for the location fact; best effort
   const facts = tripFacts(role);
   try {
     return await chat({

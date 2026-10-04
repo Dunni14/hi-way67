@@ -39,6 +39,22 @@ const Config = z.object({
     minWindows: z.number().int().positive(),
     fullConfidenceWindows: pos,
   }),
+  gps: z.object({
+    /** Fraction over the posted limit that maps to speeding = 1. */
+    speedingOverFull: pos,
+    accuracyMaxM: pos,
+    minGoodFixes: z.number().int().positive(),
+    /** Heading is noise below this speed and is ignored. */
+    headingMinSpeedMps: z.number().min(0),
+    erratic: z.object({ accelLow: z.number(), accelFull: z.number(), headingLow: z.number(), headingFull: z.number() }),
+    /** Posted limit (mph) by OSM `highway` class when a way has no usable `maxspeed`. */
+    fallbackLimitsMph: z.record(z.string(), pos),
+    trip: z.object({ startSpeedMps: pos, startHoldS: pos, stopSpeedMps: pos, stopHoldS: pos }),
+    lookup: z.object({ radiusM: pos, timeoutMs: pos, cacheMax: z.number().int().positive(), cacheTtlS: pos, failureBackoffS: pos, maxInflight: z.number().int().positive() }),
+    restStop: z.object({ radiusKm: pos, coneDeg: pos, timeoutMs: pos }),
+    /** A fix older than this is reported as stale to contacts. */
+    staleFixS: pos,
+  }),
   adaptive: z.object({
     careNeutral: z.number(),
     careAlpha: pos,
