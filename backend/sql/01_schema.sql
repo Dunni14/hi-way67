@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS drivers (
                      CHECK (sharing_mode IN ('always', 'high_risk_only', 'never')),
   has_family_voice boolean NOT NULL DEFAULT false,
   weight_overrides jsonb NOT NULL DEFAULT '{}',   -- factor -> multiplier 0.5..1.5
+  profile          jsonb NOT NULL DEFAULT '{}',   -- {careIndex, scoredTrips, learnedShift}, see risk/profile.ts
   created_at       timestamptz NOT NULL DEFAULT now()
 );
 
@@ -164,6 +165,38 @@ CREATE TABLE IF NOT EXISTS events (
 );
 SELECT create_hypertable('events', 'ts',
   chunk_time_interval => INTERVAL '7 days', if_not_exists => TRUE);
+
+-- One expression label per 10 s window (calm, neutral, stressed, drowsy, distracted, no_face).
+CREATE TABLE IF NOT EXISTS observations (
+  ts               timestamptz NOT NULL,
+  trip_id          text NOT NULL,
+  driver_id        text NOT NULL,
+  expression       text NOT NULL,
+  intensity        double precision NOT NULL,   -- 0..1
+  face_visible     boolean,
+  stress           double precision,
+  engagement       double precision,
+  eye_closure_frac double precision,
+  yawns            double precision,
+  gaze_off_road_s  double precision,
+  PRIMARY KEY (trip_id, ts)
+);
+SELECT create_hypertable('observations', 'ts',
+  chunk_time_interval => INTERVAL '1 day', if_not_exists => TRUE);
+
+-- One report card per ended trip. `features` is the fixed-order vector named in card.feature_names.
+CREATE TABLE IF NOT EXISTS report_cards (
+  trip_id         text PRIMARY KEY,
+  driver_id       text NOT NULL,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  formula_version int NOT NULL,
+  score           double precision NOT NULL,   -- 0..100, higher is better
+  grade           text NOT NULL,
+  confidence      double precision NOT NULL,
+  card            jsonb NOT NULL,
+  features        double precision[] NOT NULL
+);
+CREATE INDEX IF NOT EXISTS report_cards_driver_idx ON report_cards (driver_id, created_at DESC);
 
 -- Bandit decisions and their rewards.
 CREATE TABLE IF NOT EXISTS bandit_events (

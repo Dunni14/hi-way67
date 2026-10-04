@@ -30,6 +30,25 @@ const Config = z.object({
   notifyCooldownS: pos,
   degradedAfterWindows: z.number().int().positive(),
   feedback: z.object({ falseAlarm: pos, confirmed: pos, min: pos, max: pos }),
+  expression: z.object({ drowsyEye: pos, drowsyYawns: pos, drowsyClosureS: pos, stress: pos, gazeS: pos, calmEngagement: pos, calmStress: pos }),
+  report: z.object({
+    formulaVersion: z.number().int().positive(),
+    penalty: z.object({ meanRisk: z.number(), p90Risk: z.number(), tier2Frac: z.number(), tier3Frac: z.number(), microsleep: z.number(), microsleepCap: pos }),
+    highLevel: pos,
+    grades: z.object({ A: z.number(), B: z.number(), C: z.number(), D: z.number() }),
+    minWindows: z.number().int().positive(),
+    fullConfidenceWindows: pos,
+  }),
+  adaptive: z.object({
+    careNeutral: z.number(),
+    careAlpha: pos,
+    shiftPerPoint: z.number(),
+    minNotify: pos,
+    maxNotify: pos,
+    learnedClamp: pos,
+    falseAlarmShift: z.number(),
+    confirmedShift: z.number(),
+  }),
 });
 
 export type RiskConfig = z.infer<typeof Config>;
