@@ -24,6 +24,7 @@ The phone senses and displays; the backend's risk engine (`src/risk`) scores eve
 |---|---|---|
 | `evaluation` | `ts` (of the window), `score` (0–100), `tier` (0–3), `dominant`, `levels` (0–1 per factor), `override`, `degraded`, `actions[]`, `calibrating` | show it; play the alarm when `actions` has `voice_urgent` |
 | `speak` | `id`, `text`, `tier`, `audio` (base64 mp3, may be `""`), `listenAfterMs`, `context` | play `audio` (or on-device TTS of `text` if empty); if `listenAfterMs > 0`, listen that long and send an `utterance` with the same `context`; then send `speak_done` |
+| `report` | `score`, `grade`, `summary`, `avg_speed_mph`, `top_speed_mph`, `attention_score`, `duration_s`, `distance_mi`, `image` (base64 PNG, may be `""`) | once, after `trip_end`, if the engine scored the trip: show the report the backend generated for friends and family |
 | `navigate` | `query` | open maps for "rest stop" |
 | `dismissed` | `factor?`, `multiplier?` | driver said "I'm fine": stop the alarm; the engine eased that factor's weight for this driver |
 | `error` | `message` | log it |

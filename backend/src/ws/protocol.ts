@@ -106,4 +106,17 @@ export type BackendMsg =
       actions: string[]; // voice_nudge, voice_warning, voice_urgent, notify_contacts, …
       calibrating: boolean; // still inside the engine's baseline windows
     }
+  // Sent once when the trip ends and the engine scored it: what was (or would be) shared with friends and family.
+  | {
+      type: "report";
+      score: number; // 0..100, higher is better
+      grade: "A" | "B" | "C" | "D" | "F";
+      summary: string; // a few plain sentences on how the trip went
+      avg_speed_mph: number;
+      top_speed_mph: number;
+      attention_score: number; // 0..100
+      duration_s: number;
+      distance_mi: number;
+      image: string; // base64 PNG of the report card ("" if rendering failed)
+    }
   | { type: "error"; message: string };

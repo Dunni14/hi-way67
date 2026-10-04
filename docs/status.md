@@ -90,6 +90,8 @@ The tree is split between phone and backend. See [architecture.md](architecture.
 | "Third late-night drive this week" | Partial | Logic done, but trip history is in memory, so it only counts trips since the last restart. |
 | "Mom wants a message when he arrives" | Partial | Works, but stored in memory only. |
 | Arrival message + trip summary | Done | Duration, warning count, peak risk. |
+| Report card image on arrival | Done (backend) | When the risk engine ran the trip and sharing is not `never`, the group chat (or every contact when no group is bound) gets the report card as a PNG attachment followed by a few plain sentences on how the trip went; contacts who asked to be told on arrival get the image by DM too. The image shows the safety score and grade, average and top speed, attention score, duration, distance, time over the limit, hard brakes and swerves, phone use, warnings, an "In brief" summary and five category meters, never a location. Any rendering or sending failure falls back to the text summary. Not tried against a real iMessage or Telegram chat yet. See [risk-engine.md](risk-engine.md). |
+| Report shown on the phone after the drive | Built | The backend sends a `report` frame (summary, speeds, attention, PNG) after `trip_end`, even when sharing is `never`; opening the latest trip's report card on Stats shows exactly what was shared. JVM-tested decode; compiles, not run on a device. See [protocol.md](protocol.md). |
 | Sharing modes: always / high only / never | Done | See [imessage-agent.md](imessage-agent.md#sharing-modes). |
 | Fallback: DMs when there is no group chat | Done | `post()` fans out to every allowlisted contact by DM. |
 
@@ -98,7 +100,7 @@ The tree is split between phone and backend. See [architecture.md](architecture.
 | Feature | Status | Notes |
 |---|---|---|
 | Every 10 s window persisted | Done (backend) | Each phone window is stored by the risk engine (`windows`, `events` hypertables on Tiger Data via `DATABASE_URL`; in-memory fake DB when unset). |
-| Report card: line chart, letter grade, advice | Built | Phone `ReportCardScreen`, built from the engine's evaluations. The engine also serves `GET /trips/{id}/report`. |
+| Report card: line chart, letter grade, advice | Built (the shared backend report sits above it once it arrives) | Phone `ReportCardScreen`, built from the engine's evaluations. The engine also serves `GET /trips/{id}/report`. |
 | End-of-trip summary popup | Built | When a trip ends the phone shows a popup with duration, average speed, top speed and alertness (100 minus the trip's average risk; GREAT / GOOD / LOW), with a button to the full report card. Speeds come from the phone's GPS; alertness needs the engine's scores. It replaces the automatic jump to the report card. Not yet checked on a device. |
 | Trip history | Built | Stats tab lists finished trips, newest first (date, grade, duration, average and top speed, average and peak risk, alert count); the latest reopens its report card. Up to 50 summaries are kept on the phone (`TripHistoryStore`, a JSON file); only trips the engine scored are recorded. Not yet checked on a device. |
 | Weekly trends | Not started | |

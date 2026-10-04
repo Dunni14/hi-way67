@@ -10,6 +10,7 @@ Node / TypeScript backend for Driver Guardian (MHacks 26). It talks to the Andro
 - `src/agent/`: Spectrum connection (`spectrum.ts`), classifier, answers, roast, contacts allowlist, driver intent regexes.
 - `src/voice/`: ElevenLabs TTS, the one-at-a-time driver speech queue, spoken line templates.
 - `src/risk/`: logistic risk engine (pure core, service, Postgres store). `src/http/risk.ts`: its REST routes.
+- `src/report/`: the report card as a PNG (satori + resvg), sent as an attachment at trip end and served at `GET /trips/{id}/card.png`.
 - `src/bandit/`: adaptive recommendations (LinUCB over the tier the risk engine chose; pure math, service, Tiger Data store; config in `bandit.json`). Needs `TIGER_DATABASE_URL`. Never touches tiers or cooldowns.
 - `src/gps/`: phone GPS. Pure features, trip start/stop, Overpass speed limit and rest stop lookups, reverse geocoding, location text, card route. Scored in `risk/service.ts`. See [`../docs/gps.md`](../docs/gps.md).
 - `src/trip/`: live trip state, and the `TripStore` interface. The only implementation is in-memory; Tiger Data is a TODO.

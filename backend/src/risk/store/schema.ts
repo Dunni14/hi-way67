@@ -125,6 +125,7 @@ CREATE TABLE IF NOT EXISTS report_cards (
   distance_mi           DOUBLE PRECISION,
   avg_speed_mph         DOUBLE PRECISION,
   max_speed_mph         DOUBLE PRECISION,
+  attention_score       DOUBLE PRECISION,
   over_limit_s          INT NOT NULL DEFAULT 0,
   max_over_limit_mph    DOUBLE PRECISION,
   hard_brakes           INT NOT NULL DEFAULT 0,
@@ -142,6 +143,7 @@ CREATE TABLE IF NOT EXISTS report_cards (
   series                JSONB NOT NULL,
   features              DOUBLE PRECISION[] NOT NULL
 );
+ALTER TABLE report_cards ADD COLUMN IF NOT EXISTS attention_score DOUBLE PRECISION;
 CREATE INDEX IF NOT EXISTS report_cards_driver_idx ON report_cards (driver_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS decision_log (
@@ -165,7 +167,10 @@ SELECT driver_id,
   count(*) FILTER (WHERE night_trip)::int AS night_trips,
   coalesce(sum(distance_mi), 0) AS distance_mi,
   coalesce(sum(duration_s), 0)::int AS duration_s,
-  max(created_at) AS last_trip_at
+  max(created_at) AS last_trip_at,
+  avg(attention_score) FILTER (WHERE NOT provisional) AS avg_attention,
+  avg(avg_speed_mph) FILTER (WHERE NOT provisional) AS avg_speed_mph,
+  max(max_speed_mph) AS top_speed_mph
 FROM report_cards GROUP BY driver_id;
 
 CREATE TABLE IF NOT EXISTS gps_samples (

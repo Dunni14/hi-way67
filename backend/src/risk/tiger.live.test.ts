@@ -125,4 +125,9 @@ test("ending a trip stores observations, a decision log and a report card that o
   assert.ok(report.series.length >= 10);
   const profile: any = await svc.profile(DRIVER);
   assert.equal(profile.scorecard.scored_trips, 1);
+  assert.equal(profile.scorecard.top_speed_mph, end.card.metrics.max_speed_mph);
+  assert.ok(profile.scorecard.avg_attention != null);
+  const hist: any[] = await svc.driverTrips(DRIVER);
+  assert.equal(hist[0].attention_score, end.card.categories.attention);
+  assert.ok((await svc.cardImage(trip_id)).length > 20_000);
 });

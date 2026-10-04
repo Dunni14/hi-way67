@@ -81,6 +81,7 @@ class MainActivity : ComponentActivity() {
         val voice by vm.voiceState.collectAsState()
         val settings by vm.settingsFlow.collectAsState()
         val report by vm.report.collectAsState()
+        val shared by vm.sharedReport.collectAsState()
         val history by vm.history.collectAsState()
         var showReport by remember { mutableStateOf(false) }
         val parked = !ui.running || ui.speedMph < 3
@@ -91,8 +92,8 @@ class MainActivity : ComponentActivity() {
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f)) {
                 when (tab) {
-                    // The report card of the trip that just ended; Done drops back to the history list.
-                    "stats" -> report?.takeIf { showReport }?.let { ReportCardScreen(it) { showReport = false } }
+                    // The report card of the trip that just ended (with what the backend shared, once it arrives); Done drops back to the history list.
+                    "stats" -> report?.takeIf { showReport }?.let { ReportCardScreen(it, shared) { showReport = false } }
                         ?: TripHistoryScreen(history, onOpenLatest = if (report != null) ({ showReport = true }) else null)
                     "contacts" -> PlaceholderScreen(
                         "Contacts",

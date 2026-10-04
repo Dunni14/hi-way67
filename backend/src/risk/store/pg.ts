@@ -253,7 +253,7 @@ export class PgRiskStore implements RiskStore {
       ["mean_risk", k.components.mean_risk], ["p90_risk", k.components.p90_risk], ["max_risk", m.max_risk],
       ["tier0_s", m.tier_seconds[0]], ["tier1_s", m.tier_seconds[1]], ["tier2_s", m.tier_seconds[2]], ["tier3_s", m.tier_seconds[3]],
       ["microsleeps", k.components.microsleeps], ["distance_mi", m.distance_mi], ["avg_speed_mph", m.avg_speed_mph],
-      ["max_speed_mph", m.max_speed_mph], ["over_limit_s", m.over_limit_s], ["max_over_limit_mph", m.max_over_limit_mph],
+      ["max_speed_mph", m.max_speed_mph], ["attention_score", k.categories.attention], ["over_limit_s", m.over_limit_s], ["max_over_limit_mph", m.max_over_limit_mph],
       ["hard_brakes", k.counts.hard_brakes], ["swerves", k.counts.swerves], ["phone_s", m.phone_s], ["yawns", Math.round(m.yawns)],
       ["longest_eye_closure_s", m.longest_eye_closure_s], ["gaze_off_road_s", m.gaze_off_road_s], ["degraded_s", m.degraded_s],
       ["dominant_expression", k.expression.dominant], ["notify_threshold", k.profile?.notify_threshold ?? null],
@@ -303,7 +303,7 @@ export class PgRiskStore implements RiskStore {
     const { rows } = await this.db.query(`SELECT * FROM driver_scorecard WHERE driver_id = $1`, [driverId]);
     const r = rows[0];
     return r
-      ? { scored_trips: r.scored_trips, avg_score: r.avg_score, avg_score_30d: r.avg_score_30d, night_trips: r.night_trips, distance_mi: r.distance_mi, duration_s: r.duration_s, last_trip_at: iso(r.last_trip_at) }
+      ? { scored_trips: r.scored_trips, avg_score: r.avg_score, avg_score_30d: r.avg_score_30d, night_trips: r.night_trips, distance_mi: r.distance_mi, duration_s: r.duration_s, last_trip_at: iso(r.last_trip_at), avg_attention: r.avg_attention, avg_speed_mph: r.avg_speed_mph, top_speed_mph: r.top_speed_mph }
       : null;
   }
 }

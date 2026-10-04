@@ -15,7 +15,7 @@ The risk engine REST API (`src/risk/`) persists to Postgres through `PgRiskStore
 | `gps_samples` | Raw GPS fixes of an active trip ([gps.md](gps.md)) | 7 days |
 | `events` | Every window where the tree fired an action | Forever |
 | `decision_log` | Action, 8-number context, threshold used, feedback reward | Forever, compressed after 7 days |
-| `report_cards` | One row per ended trip: score, grade, tier seconds, distance, speed and limit stats, counts, expression, interventions, driver profile before and after, `card` JSONB, 30 s `series`, `features` vector | Forever |
+| `report_cards` | One row per ended trip: score, grade, tier seconds, distance, average and top speed, attention score, speed and limit stats, counts, expression, interventions, driver profile before and after, `card` JSONB, 30 s `series`, `features` vector | Forever |
 | `trips`, `drivers` | Trip context and baselines; sharing mode, weight multipliers, `profile` | Forever |
 | `windows_30s`, `trip_summary_5m`, `gps_10s` | Continuous aggregates | Forever (they refresh inside the raw retention). `gps_10s` keeps a last latitude and longitude per 10 s bucket |
 | `driver_scorecard` (view) | Trips scored, average score (all time and 30 days), night trips, distance, time | Computed from `report_cards` |

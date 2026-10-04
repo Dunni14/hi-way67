@@ -60,7 +60,7 @@ An 85-tier alert posts "⚠️ Alex is at high risk…" to the whole chat and th
 | `question` | Asks about the driver or trip | Typing indicator, then an LLM answer as a reply |
 | `to_driver` | "Tell Alex …" or anything addressed to the driver | Shorten to one line, queue as "Message from Mom: …", listen 5 s, react 👍. With no active trip, replies "Alex isn't driving right now…". |
 | `roast_reply` | A roast while a roast round is active | Shorten, queue as **priority** "Sam says: …", listen 5 s, react 😂 |
-| `arrival_pref` | "Let me know when he gets there" | Save `notifyOnArrival` for the sender, confirm |
+| `arrival_pref` | "Let me know when he gets there" | Save `notifyOnArrival` for the sender, confirm. On arrival they get a DM, plus the report card image |
 | `chatter` | People talking among themselves | Stay silent |
 
 A `roast_reply` outside a roast round is downgraded to `to_driver`.
@@ -124,3 +124,7 @@ Only a **drowsy** 85 starts a roast. A **reckless** 85 alerts guardians and noth
 | "That's the 3rd late-night drive this week" on trip start (22:00–05:00, at least 2 night trips in 7 days, `always` mode only) | Logic done; history is in memory (**stub**) |
 | "Mom wants a message when he arrives" (one-shot, cleared after sending) | Logic done; prefs are in memory (**stub**) |
 | Trip summary: "🏁 Alex arrived safely. 34 min drive, 2 warnings, peak risk 88/100." | Done |
+
+## Report card image
+
+At trip end, when the risk engine scored the trip and the sharing mode is not `never`, `orchestrator.ts` renders the report card with `report/image.ts` and posts it through `postImage` (`agent/spectrum.ts`): to the family group, or to every contact when no group is bound, using Spectrum's `attachment()` content. Contacts with `notifyOnArrival` also get it through `dmImage`. The group then gets the same few sentences as text (`🏁 …`, from `report/narrative.ts`) so the chat preview says something. If rendering or sending fails, the plain-text summary is posted instead. The image shows score, grade, average and top speed, attention and the category meters, never a location.

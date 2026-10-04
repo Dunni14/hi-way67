@@ -56,6 +56,10 @@ export function createRiskRoutes(svc: RiskService) {
         send(res, 200, await svc.state(id));
       } else if (m === "GET" && a === "trips" && b === "card" && id) {
         send(res, 200, await svc.card(id));
+      } else if (m === "GET" && a === "trips" && b === "card.png" && id) {
+        const png = await svc.cardImage(id);
+        res.writeHead(200, { "Content-Type": "image/png", "Content-Length": png.length, "Cache-Control": "no-store" });
+        res.end(png);
       } else if (m === "GET" && a === "trips" && b === "observations" && id) {
         send(res, 200, await svc.observations(id));
       } else if (m === "GET" && isDrivers && b === "profile") {

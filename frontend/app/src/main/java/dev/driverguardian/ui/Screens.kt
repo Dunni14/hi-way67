@@ -8,6 +8,7 @@ import dev.driverguardian.sensing.PresagePreview
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.clickable
@@ -27,6 +28,8 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
@@ -459,22 +462,47 @@ private fun gradeColor(g: String) = when (g) {
     else -> Color(0xFFE53935)
 }
 
-/** Shown after "End trip", while parked. Everything comes from the windows the app held. */
+/**
+ * Shown after "End trip", while parked. [shared] is the report the backend generated and sent to friends and
+ * family (arrives a moment after the trip ends); [card] is the phone's own summary of the windows it held.
+ */
 @Composable
-fun ReportCardScreen(card: dg.core.ReportCard, onDone: () -> Unit) {
+fun ReportCardScreen(card: dg.core.ReportCard?, shared: dg.core.BackendFrame.Report?, onDone: () -> Unit) {
     Column(Modifier.fillMaxSize().background(Color(0xFF101010)).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text(card.grade, color = gradeColor(card.grade), fontSize = 96.sp, fontWeight = FontWeight.Bold)
-            Column {
-                Text("Trip report", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        if (shared != null) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(shared.grade, color = gradeColor(shared.grade), fontSize = 96.sp, fontWeight = FontWeight.Bold)
+                Column {
+                    Text("Shared with friends and family", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text("Safety score ${shared.score.toInt()}/100", color = Color.White)
+                }
+            }
+            if (shared.summary.isNotBlank()) Text(shared.summary, color = Color.White, fontSize = 16.sp)
+            Mono("avg speed %.0f mph   top speed %.0f mph   attention %.0f/100".format(shared.avgSpeedMph, shared.topSpeedMph, shared.attentionScore))
+            val bitmap = remember(shared.image) {
+                if (shared.image.isEmpty()) null
+                else runCatching {
+                    val bytes = android.util.Base64.decode(shared.image, android.util.Base64.DEFAULT)
+                    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                }.getOrNull()
+            }
+            if (bitmap != null) {
+                Image(bitmap, contentDescription = "Trip report card, as shared", modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.FillWidth)
+            }
+        } else {
+            Mono("Making the shared report…")
+        }
+        if (card != null) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("Risk over the trip", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Text("${card.durationMin} min", color = Color.White)
             }
+            if (shared == null) Text(card.advice, color = Color.White, fontSize = 16.sp)
+            RiskChart(card.series, Modifier.fillMaxWidth().height(180.dp))
+            Mono("avg risk %.0f   peak %.0f   time at warning or worse: %.0f%%".format(card.avgRisk, card.peakRisk, card.pctHighRisk))
+            Mono("alerts: " + if (card.alertsByTier.isEmpty()) "none" else card.alertsByTier.entries.joinToString("  ") { "T${it.key}×${it.value}" })
+            if (card.eventCounts.isNotEmpty()) Mono("events: " + card.eventCounts.entries.joinToString("  ") { "${it.key}×${it.value}" })
         }
-        Text(card.advice, color = Color.White, fontSize = 16.sp)
-        RiskChart(card.series, Modifier.fillMaxWidth().height(180.dp))
-        Mono("avg risk %.0f   peak %.0f   time at warning or worse: %.0f%%".format(card.avgRisk, card.peakRisk, card.pctHighRisk))
-        Mono("alerts: " + if (card.alertsByTier.isEmpty()) "none" else card.alertsByTier.entries.joinToString("  ") { "T${it.key}×${it.value}" })
-        if (card.eventCounts.isNotEmpty()) Mono("events: " + card.eventCounts.entries.joinToString("  ") { "${it.key}×${it.value}" })
         Button(onClick = onDone) { Text("Done") }
     }
 }

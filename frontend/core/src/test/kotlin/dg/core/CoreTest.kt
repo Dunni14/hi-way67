@@ -92,6 +92,24 @@ class CoreTest {
         assertEquals(BackendFrame.Navigate("rest stop"), decodeBackendFrame("""{"type":"navigate","query":"rest stop"}"""))
     }
 
+    @Test fun reportDecodes() {
+        val r = decodeBackendFrame(
+            """{"type":"report","score":33.1,"grade":"F","summary":"Alex's drive was risky.","avg_speed_mph":58,"top_speed_mph":61.5,""" +
+                """"attention_score":97,"duration_s":1020,"distance_mi":16.2,"image":"iVBORw0KGgo="}""",
+        ) as BackendFrame.Report
+        assertEquals(33.1, r.score, 1e-9)
+        assertEquals("F", r.grade)
+        assertEquals("Alex's drive was risky.", r.summary)
+        assertEquals(58.0, r.avgSpeedMph, 1e-9)
+        assertEquals(61.5, r.topSpeedMph, 1e-9)
+        assertEquals(97.0, r.attentionScore, 1e-9)
+        assertEquals(1020, r.durationS)
+        assertEquals(16.2, r.distanceMi, 1e-9)
+        assertEquals("iVBORw0KGgo=", r.image)
+        // A frame with only the type still decodes (every field defaults), so an older backend never crashes the app.
+        assertEquals(BackendFrame.Report(0.0, "", "", 0.0, 0.0, 0.0, 0, 0.0, ""), decodeBackendFrame("""{"type":"report"}"""))
+    }
+
     @Test fun evaluationDecodes() {
         val e = decodeBackendFrame(
             """{"type":"evaluation","ts":5,"score":22.5,"tier":2,"dominant":"drowsy","levels":{"drowsy":0.67,"speeding":0},""" +
