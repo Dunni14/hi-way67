@@ -12,7 +12,7 @@ The phone app is [`frontend/`](../frontend) (Driver Guardian). It computes the s
 |---|---|---|
 | Presage SDK on device | Built | `frontend` `SmartSpectraPresageSource`: pulse, breathing, blinks, expression, and face landmarks at 1 Hz. Face visibility comes from the SDK's validation status; pulse confidence only gates heart rate. |
 | Eye closure from landmarks | Built | `core/FaceGeometry.kt`: eye aspect ratio → closure 0..1 (assumes the MediaPipe 478-point layout). |
-| Yawn detection | Built | `YawnDetector`: mouth openness > 0.6 for 1.5 s, at most one per 5 s. Emits the `yawn` event. |
+| Yawn detection | Built | Presage has no yawn output (its face metrics are landmarks, blinking, talking, expressions). `FaceSampler` runs every landmark frame (MediaPipe Face Mesh, confirmed in the SDK) through `YawnDetector`: mouth openness ≥ 0.6 held 1.5 s, ≤ 150 ms jitter tolerated, one per 5 s. Emits the `yawn` event. Threshold to be tuned on device (Debug screen / `adb logcat -s Presage`). |
 | Nod detection | Not started | `nod` event never set. |
 | 60 s per-trip baseline | Built | `frontend/core` `TripEngine`; "Calibrating…" on screen, no alerts meanwhile. |
 | 10 s rolling-average smoothing | Built | `SignalSmoother`. |
@@ -70,7 +70,7 @@ The tree is split between phone and backend. See [architecture.md](architecture.
 | Listen 5 s after a message, relay reply | Built | Frontend runs `SpeechRecognizer` for `listenAfterMs` and sends `utterance` with the same `context`. Needs the mic permission. |
 | Roasts go through immediately at high drowsiness | Done | Roasts are enqueued as priority. |
 | Family messages go through immediately at high drowsiness | Not started | Normal family messages are always queued in order, regardless of risk. |
-| Full-screen hands-free dashcam UI | Built | Portrait, keep-screen-on, immersive; controls only enabled while parked. |
+| Full-screen hands-free dashcam UI | Built | Portrait, wireframe layout: status pill (speaking / listening / yawn / can't see driver), speed vs limit, attention · eye tracking · drowsiness · speech tiles, drive/stats/contacts/settings tabs; only Drive while moving. |
 
 ## 6. Photon iMessage agent
 

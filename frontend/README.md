@@ -26,6 +26,15 @@ minutes, so the alarm and group alert don't repeat sooner. The rates are constan
 
 Allow the microphone on first launch so spoken check-ins can hear "I'm fine" and roast replies. Logs: `adb logcat -s Presage Voice`.
 
+Drive tab (follows the Figma wireframe): status pill, current speed vs the fixed demo limit, Start/End trip, and four
+tiles: attention (risk tier), eye tracking (live eye closure), drowsiness (sub-score + yawn count), speech activity
+(Presage talking / mic listening). Stats shows the last report card; Contacts is a placeholder (contacts live in the
+backend's `contacts.json`); Settings links to the Debug screen.
+
+Yawns: Presage has no yawn metric, so `FaceSampler` (core) runs every face-landmark frame through `YawnDetector`.
+To tune `FaceGeometry.MAR_YAWN` (0.6), turn demo mode off, start a trip and watch `adb logcat -s Presage`: one
+`face: … mouthMax=…` line per second; note the value while talking vs yawning and set the threshold between them.
+
 ## Not done yet
 
 - Presage on a real face is unverified on a device. Eye closure and yawns come from the SDK's face landmarks (`core/FaceGeometry.kt`, assumes the MediaPipe 478-point layout); nod and gaze stay unset.

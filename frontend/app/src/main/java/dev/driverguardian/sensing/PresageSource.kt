@@ -15,12 +15,11 @@ import com.presagetech.smartspectra.ValidationStatus
 import com.presagetech.smartspectra.proto.MetricsProto
 import dev.driverguardian.BuildConfig
 import dg.core.DemoScript
-import dg.core.FaceGeometry
+import dg.core.FaceSampler
 import dg.core.PresageFrame
 import dg.core.RealClock
 import dg.core.TripClock
 import dg.core.Pt
-import dg.core.YawnDetector
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -64,7 +63,7 @@ object PresagePreview {
 /**
  * Real Presage source (SDK usage mirrors the standalone demo in `../android`). Emits one frame per
  * second built from the latest SDK metrics: pulse, breathing, blinks and expression scores from the
- * SDK, plus eye closure and yawns derived from its face landmarks ([FaceGeometry]). Nod and gaze
+ * SDK, plus eye closure and yawns derived from every face-landmark frame ([FaceSampler]). Nod and gaze
  * stay at their defaults.
  */
 class SmartSpectraPresageSource(private val context: Context) : PresageSource {
@@ -86,8 +85,23 @@ class SmartSpectraPresageSource(private val context: Context) : PresageSource {
         var metrics: MetricsProto.Metrics? = null
         var valid = false
         var blinkSinceMs: Long? = null
-        val yawns = YawnDetector()
-        val metricsObs = Observer<MetricsProto.Metrics?> { metrics = it }
+        // Every landmark sample goes through the sampler as it arrives (each update is a batch of
+        // camera frames); the 1 Hz loop below drains a per-second summary from it.
+        val sampler = FaceSampler()
+        var loggedUnit = false
+        val metricsObs = Observer<MetricsProto.Metrics?> { m ->
+            metrics = m
+            val face = m?.takeIf { it.hasFace() }?.face ?: return@Observer
+            for (lm in face.landmarksList) {
+                // Fall back to arrival time if the SDK leaves the timestamp unset.
+                val ts = lm.timestamp.takeIf { it > 0 } ?: (System.currentTimeMillis() * 1000)
+                sampler.add(ts, lm.valueList.map { Pt(it.x.toDouble(), it.y.toDouble()) })
+            }
+            if (!loggedUnit && sampler.unitsPerMs != null) {
+                loggedUnit = true
+                Log.d(TAG, "landmark timestamps: ${sampler.unitsPerMs} units/ms, ${face.landmarksList.lastOrNull()?.valueCount} points")
+            }
+        }
         val validationObs = Observer<ValidationStatus?> { s ->
             s ?: return@Observer
             if ((s.code == ValidationCode.OK) != valid) Log.d(TAG, "validation ${s.code} ${s.hint}")
@@ -117,16 +131,14 @@ class SmartSpectraPresageSource(private val context: Context) : PresageSource {
                     val scores = face?.expressionList?.lastOrNull()?.scoresList.orEmpty()
                     fun score(t: MetricsProto.ExpressionType) = scores.firstOrNull { it.type == t }?.confidence?.toDouble() ?: 0.0
 
-                    val points = face?.landmarksList?.lastOrNull()?.valueList?.map { Pt(it.x.toDouble(), it.y.toDouble()) }.orEmpty()
-                    val ear = FaceGeometry.eyeOpenness(points)
-                    val mar = FaceGeometry.mouthOpenness(points)
-                    val eyeClosed = when {
-                        ear != null -> maxOf(FaceGeometry.eyeClosure(ear), if (blinking) 1.0 else 0.0)
-                        face != null && face.blinkingCount > 0 -> if (blinking) 1.0 else 0.0
-                        else -> null
-                    }
-                    val yawn = yawns.update(now, mar)
-                    if (yawn) Log.d(TAG, "yawn (mouth %.2f)".format(mar))
+                    val talking = face?.talkingList?.lastOrNull()?.detected
+                    val f = sampler.drain()
+                    // Mean eye closure over this second's frames when landmarks came in, else the blink flag.
+                    val eyeClosed = f.eyeClosed
+                        ?: if (face != null && face.blinkingCount > 0) (if (blinking) 1.0 else 0.0) else null
+                    // One line per second for tuning: watch mouth while yawning vs talking.
+                    Log.d(TAG, "face: frames=${f.samples} eyeClosed=${fmt(eyeClosed)} mouthMax=${fmt(f.mouthOpenMax)} " +
+                        "talking=$talking blink=$blinking valid=$valid" + if (f.yawned) "  >>> YAWN (${sampler.totalYawns} this trip)" else "")
 
                     emit(PresageFrame(
                         tsMs = now,
@@ -134,10 +146,12 @@ class SmartSpectraPresageSource(private val context: Context) : PresageSource {
                         confidence = if (valid && m != null) 1.0 else 0.0,
                         eyeClosed = eyeClosed,
                         longBlink = blinkSinceMs?.let { now - it >= LONG_BLINK_MS } == true,
-                        yawn = yawn,
+                        yawn = f.yawned,
                         heartRate = pulse?.takeIf { it.confidence.toDouble() >= MIN_PULSE_CONFIDENCE }?.value?.toDouble(),
                         breathing = rate?.value?.toDouble(),
                         stress = if (scores.isEmpty()) null else maxOf(score(MetricsProto.ExpressionType.ANGRY), score(MetricsProto.ExpressionType.FEAR), score(MetricsProto.ExpressionType.DISGUST)),
+                        talking = talking,
+                        mouthOpen = f.mouthOpenMax,
                     ))
                 }
             }
@@ -153,6 +167,7 @@ class SmartSpectraPresageSource(private val context: Context) : PresageSource {
     private companion object {
         const val TAG = "Presage"
         const val LONG_BLINK_MS = 500L
+        fun fmt(v: Double?) = v?.let { "%.2f".format(it) } ?: "-"
         const val MIN_PULSE_CONFIDENCE = 0.5
     }
 }

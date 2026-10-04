@@ -56,6 +56,14 @@ data class UiState(
     val gateBand: Int = 0,
     val gateHeldSec: Int = 0,
     val cooldownSec: Map<Int, Int> = emptyMap(),
+    // Live ~1 Hz Presage values (the fields above update once per 10 s window).
+    val liveEyeClosed: Double? = null,
+    val liveHeartRate: Double? = null,
+    val talking: Boolean? = null,
+    val mouthOpen: Double? = null,
+    val faceVisible: Boolean = false,
+    val yawnCount: Int = 0,
+    val lastYawnAtMs: Long = 0,
 )
 
 /** Owns the trip lifecycle and the 10 s window loop. Phone reports, backend acts. */
@@ -84,6 +92,7 @@ class TripController(app: Application) : AndroidViewModel(app) {
         onFrame = ::onBackend,
     )
     val connection: StateFlow<Conn> = client.state
+    val voiceState: StateFlow<VoicePlayer.State> = voice.state
 
     // Windows and alert tiers held for the current trip; the report card is computed from these locally.
     private val tripWindows = mutableListOf<PhoneFrame.RiskWindow>()
@@ -126,7 +135,7 @@ class TripController(app: Application) : AndroidViewModel(app) {
         engine = TripEngine(model, gate = AlertGate(cooldownMs = (COOLDOWN_MS * c.steadyRate).toLong())).also { it.start(start) }
         client.send(PhoneFrame.TripStart)
         tripWindows.clear(); tripAlerts.clear(); _report.value = null
-        _ui.value = _ui.value.copy(running = true, calibrating = true, tier = 0)
+        _ui.value = _ui.value.copy(running = true, calibrating = true, tier = 0, yawnCount = 0, lastYawnAtMs = 0, faceVisible = false, liveEyeClosed = null, liveHeartRate = null, talking = null, mouthOpen = null)
 
         val e = engine
         val source = if (demo) FakePresageSource(c) else SmartSpectraPresageSource(getApplication())
@@ -139,7 +148,19 @@ class TripController(app: Application) : AndroidViewModel(app) {
             ).also { it.start() }
         }
         tripJob = viewModelScope.launch {
-            launch { source.frames(start).collect { e.onPresage(it) } }
+            launch {
+                source.frames(start).collect { f ->
+                    e.onPresage(f)
+                    val u = _ui.value
+                    _ui.value = u.copy(
+                        faceVisible = f.confidence >= 0.5,
+                        liveEyeClosed = f.eyeClosed, liveHeartRate = f.heartRate ?: u.liveHeartRate,
+                        talking = f.talking, mouthOpen = f.mouthOpen,
+                        yawnCount = u.yawnCount + if (f.yawn) 1 else 0,
+                        lastYawnAtMs = if (f.yawn) System.currentTimeMillis() else u.lastYawnAtMs,
+                    )
+                }
+            }
             // Windows close every WINDOW_MS of script time, paced in real time by the clock.
             var scriptMs = 0L
             while (true) {
