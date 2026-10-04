@@ -22,7 +22,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.rounded.TrendingUp
 import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -33,6 +36,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -89,11 +93,11 @@ fun DashcamScreen(
             horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top,
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(if (ui.running) "%.0f".format(ui.speedMph) else "--", color = Good, fontSize = 45.sp, fontWeight = FontWeight.Medium, lineHeight = 52.sp)
+                Text(if (ui.running) "%.0f".format(ui.speedMph) else "--", color = if (ui.running && ui.speedMph > SPEED_LIMIT_MPH) Bad else Good, fontSize = 45.sp, fontWeight = FontWeight.Medium, lineHeight = 52.sp)
                 Text("current\nspeed", color = SystemText, style = Label, textAlign = TextAlign.Center)
             }
             Column(
-                Modifier.size(85.dp, 86.dp).card(color = Surface, elevation = 3.dp),
+                Modifier.size(85.dp, 86.dp).card(color = Surface, elevation = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
             ) {
                 Text("%.0f".format(SPEED_LIMIT_MPH), color = SystemText, fontSize = 32.sp, fontWeight = FontWeight.Medium, lineHeight = 34.sp)
@@ -104,7 +108,7 @@ fun DashcamScreen(
         // The card shows the 3D map; the driver camera is a small picture-in-picture in the corner.
         Box(Modifier.fillMaxWidth().weight(1f).card(color = Pressed)) {
             DriveMapView(Modifier.fillMaxSize())
-            Box(Modifier.align(Alignment.TopEnd).padding(10.dp).size(72.dp, 96.dp).card(RoundedCornerShape(14.dp), Color.Black, 4.dp)) {
+            Box(Modifier.align(Alignment.TopEnd).padding(10.dp).size(72.dp, 96.dp).card(RoundedCornerShape(14.dp), Color.Black, 10.dp)) {
                 // Recreate the preview when ownership flips, so the app never holds the camera Presage needs.
                 key(liveSensing) { CameraPreview(Modifier.fillMaxSize(), sdkOwnsCamera = liveSensing) }
             }
@@ -115,7 +119,7 @@ fun DashcamScreen(
                 Button(
                     onClick = onStart, modifier = button.height(52.dp), shape = CardShape,
                     colors = ButtonDefaults.buttonColors(containerColor = Main),
-                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp, pressedElevation = 2.dp),
                 ) { Text("Start trip", fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
             }
         }
@@ -135,7 +139,7 @@ private fun HoldButton(text: String, modifier: Modifier, holdMs: Int = 1500, onH
     val scope = rememberCoroutineScope()
     val held by rememberUpdatedState(onHeld)
     Box(
-        modifier.height(52.dp).card(color = Main, elevation = 4.dp)
+        modifier.height(52.dp).card(color = Main, elevation = 8.dp)
             .drawBehind { drawRect(Bad, size = Size(size.width * progress.value, size.height)) }
             .pointerInput(Unit) {
                 detectTapGestures(onPress = {
@@ -208,7 +212,7 @@ private fun StatusTile(t: Tile, modifier: Modifier) {
     val bad = t.level == Level.BAD
     val valueColor = when (t.level) { Level.GREAT -> Good; Level.GOOD -> Main; Level.BAD -> Surface; Level.NONE -> SystemText }
     Row(
-        modifier.height(86.dp).card(color = if (bad) Bad else Color.White, elevation = if (bad) 8.dp else 5.dp).padding(start = 18.dp, end = 6.dp),
+        modifier.height(86.dp).card(color = if (bad) Bad else Color.White, elevation = if (bad) 14.dp else 10.dp).padding(start = 18.dp, end = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val tint = if (bad) Color.White else Main
@@ -251,12 +255,12 @@ private fun StatusPill(ui: UiState, conn: Conn, voice: VoicePlayer.State, driver
     val ring = when (conn) { Conn.CONNECTED -> Good; Conn.CONNECTING -> Color(0xFFFDD835); else -> Bad }
     Box(modifier.height(44.dp), contentAlignment = Alignment.CenterStart) {
         Box(
-            Modifier.padding(start = 22.dp).height(34.dp).widthIn(min = 210.dp).card(RoundedCornerShape(50), bg, 4.dp)
+            Modifier.padding(start = 22.dp).height(34.dp).widthIn(min = 210.dp).card(RoundedCornerShape(50), bg, 8.dp)
                 .padding(start = 32.dp, end = 18.dp),
             contentAlignment = Alignment.Center,
         ) { Text(text, color = if (bg == Bad) Surface else SystemText, style = Label) }
         Box(
-            Modifier.size(44.dp).shadow(6.dp, CircleShape).clip(CircleShape).background(ring).padding(3.dp)
+            Modifier.size(44.dp).shadow(10.dp, CircleShape, ambientColor = ShadowAmbient, spotColor = ShadowSpot).clip(CircleShape).background(ring).padding(3.dp)
                 .clip(CircleShape).background(Main),
             contentAlignment = Alignment.Center,
         ) {
@@ -274,7 +278,7 @@ private val Tabs = listOf(
 @Composable
 fun TabBar(selected: String, parked: Boolean, onSelect: (String) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().shadow(12.dp, RectangleShape, ambientColor = Main.copy(alpha = 0.1f), spotColor = Main.copy(alpha = 0.1f))
+        Modifier.fillMaxWidth().shadow(20.dp, RectangleShape, ambientColor = ShadowAmbient, spotColor = ShadowSpot)
             .background(TabBg).navigationBarsPadding().padding(start = 15.dp, end = 15.dp, top = 8.dp, bottom = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -445,30 +449,49 @@ private fun ToggleRow(title: String, detail: String, checked: Boolean, onChange:
 /** Popup shown when a trip ends: how fast and how alert the drive was. */
 @Composable
 fun TripRecapDialog(recap: TripRecap, onDone: () -> Unit, onReport: (() -> Unit)?) {
+    val alertColor = when (recap.alertnessLabel) { "GREAT" -> Good; "GOOD" -> Main; "LOW" -> Bad; else -> Muted }
     Dialog(onDismissRequest = onDone) {
-        Column(Modifier.fillMaxWidth().clip(CardShape).background(Surface).padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Trip summary", color = OnSurface, fontSize = 22.sp)
-            Text("${recap.durationMin} min", color = SystemText, style = Label)
-            RecapRow("Average speed", recap.avgSpeedMph?.let { "%.0f mph".format(it) } ?: "--", SystemText)
-            RecapRow("Top speed", recap.topSpeedMph?.let { "%.0f mph".format(it) } ?: "--", SystemText)
-            val alertColor = when (recap.alertnessLabel) { "GREAT" -> Good; "GOOD" -> Main; "LOW" -> Bad; else -> SystemText }
-            RecapRow("Alertness", recap.alertness?.let { "$it%  ${recap.alertnessLabel}" } ?: "Not scored", alertColor)
-            if (recap.alertness == null) Text("Alertness comes from the backend's scoring, which this trip did not get.", color = SystemText, style = Label)
-            Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (onReport != null) OutlinedButton(onClick = onReport, modifier = Modifier.weight(1f), shape = CardShape) { Text("View report") }
-                Button(onClick = onDone, modifier = Modifier.weight(1f), shape = CardShape) { Text("Done") }
+        Column(Modifier.fillMaxWidth().card(color = Surface, elevation = 14.dp).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                // Alertness at a glance, in the same ring as the report card's grade.
+                Box(
+                    Modifier.size(72.dp).clip(CircleShape).background(alertColor.copy(alpha = 0.12f)).border(5.dp, alertColor, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) { Text(recap.alertness?.toString() ?: "--", color = alertColor, fontSize = 26.sp, fontWeight = FontWeight.Bold) }
+                Column {
+                    Text("Trip summary", style = SectionTitleStyle, fontSize = 22.sp)
+                    Text(
+                        "${recap.durationMin} min" + (recap.alertnessLabel?.let { " · ${it.lowercase()} alertness" } ?: ""),
+                        color = Muted, fontSize = 14.sp,
+                    )
+                }
+            }
+            RecapRow(Icons.Rounded.Speed, "Average speed", recap.avgSpeedMph?.let { "%.0f mph".format(it) } ?: "--", Ink)
+            RecapRow(Icons.AutoMirrored.Rounded.TrendingUp, "Top speed", recap.topSpeedMph?.let { "%.0f mph".format(it) } ?: "--", Ink)
+            RecapRow(Icons.Rounded.Visibility, "Alertness", recap.alertness?.let { "$it%  ${recap.alertnessLabel}" } ?: "Not scored", alertColor)
+            if (recap.alertness == null) Text("Alertness comes from the backend's scoring, which this trip did not get.", color = Muted, style = Label)
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (onReport != null) {
+                    OutlinedButton(onClick = onReport, modifier = Modifier.weight(1f).height(48.dp), shape = CardShape) { Text("View report", fontWeight = FontWeight.SemiBold) }
+                }
+                Button(
+                    onClick = onDone, modifier = Modifier.weight(1f).height(48.dp), shape = CardShape,
+                    colors = ButtonDefaults.buttonColors(containerColor = Main),
+                ) { Text("Done", fontWeight = FontWeight.SemiBold) }
             }
         }
     }
 }
 
 @Composable
-private fun RecapRow(label: String, value: String, valueColor: Color) {
+private fun RecapRow(icon: ImageVector, label: String, value: String, valueColor: Color) {
     Row(
-        Modifier.fillMaxWidth().clip(CardShape).background(Color.White).padding(horizontal = 16.dp, vertical = 14.dp),
+        Modifier.fillMaxWidth().card(elevation = 5.dp).padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, color = SystemText, style = Label, modifier = Modifier.weight(1f))
+        IconBadge(icon, size = 38.dp)
+        Spacer(Modifier.width(12.dp))
+        Text(label, color = SystemText, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
         Text(value, color = valueColor, fontSize = 20.sp, fontWeight = FontWeight.Bold)
     }
 }
@@ -477,8 +500,8 @@ private fun RecapRow(label: String, value: String, valueColor: Color) {
 @Composable
 fun LocalTripHistoryScreen(history: List<TripSummary>, onOpenLatest: (() -> Unit)?) {
     Column(Modifier.fillMaxSize().background(ScreenBg).statusBarsPadding().padding(horizontal = 15.dp).padding(top = 20.dp)) {
-        Text("Stats", color = OnSurface, fontSize = 22.sp, modifier = Modifier.padding(horizontal = 9.dp))
-        Text("Trip history", color = SystemText, style = Label, modifier = Modifier.padding(start = 9.dp, top = 12.dp, bottom = 8.dp))
+        Text("Stats", style = ScreenTitle, modifier = Modifier.padding(horizontal = 9.dp))
+        Text("Trip history", color = Muted, fontSize = 14.sp, modifier = Modifier.padding(start = 9.dp, top = 6.dp, bottom = 12.dp))
         if (history.isEmpty()) {
             Text(
                 "No trips yet. Finish one on the Drive tab and it is listed here with its grade.",
@@ -486,7 +509,7 @@ fun LocalTripHistoryScreen(history: List<TripSummary>, onOpenLatest: (() -> Unit
             )
             return@Column
         }
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(start = 2.dp, end = 2.dp, top = 4.dp, bottom = 16.dp)) {
             itemsIndexed(history) { i, trip -> TripRow(trip, onOpen = if (i == 0) onOpenLatest else null) }
         }
     }
@@ -496,14 +519,19 @@ fun LocalTripHistoryScreen(history: List<TripSummary>, onOpenLatest: (() -> Unit
 private fun TripRow(t: TripSummary, onOpen: (() -> Unit)?) {
     val date = remember(t.endedAtMs) { SimpleDateFormat("EEE d MMM, h:mm a", Locale.getDefault()).format(Date(t.endedAtMs)) }
     Row(
-        Modifier.fillMaxWidth().clip(CardShape).background(Color.White)
+        Modifier.fillMaxWidth().card(elevation = 8.dp)
             .then(if (onOpen != null) Modifier.clickable(onClick = onOpen) else Modifier)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(t.grade, color = gradeColor(t.grade), fontSize = 36.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(44.dp))
+        val tint = gradeColor(t.grade)
+        Box(
+            Modifier.size(48.dp).clip(CircleShape).background(tint.copy(alpha = 0.12f)).border(3.dp, tint, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) { Text(t.grade, color = tint, fontSize = 22.sp, fontWeight = FontWeight.Bold) }
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(date + if (t.demo) " · demo" else "", color = OnSurface, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+            Text(date + if (t.demo) " · demo" else "", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
             val speeds = listOfNotNull(t.avgSpeedMph?.let { "avg %.0f mph".format(it) }, t.topSpeedMph?.let { "top %.0f mph".format(it) })
             Text((listOf("${t.durationMin} min") + speeds).joinToString(" · "), color = SystemText, style = Label, maxLines = 1)
             Text(
@@ -511,7 +539,7 @@ private fun TripRow(t: TripSummary, onOpen: (() -> Unit)?) {
                 color = SystemText, style = Label, maxLines = 1,
             )
         }
-        if (onOpen != null) Text("Report", color = Main, style = Label)
+        if (onOpen != null) Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = "Open report", tint = Main)
     }
 }
 

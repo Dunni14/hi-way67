@@ -47,9 +47,13 @@ internal val SectionTitleStyle = TextStyle(fontSize = 19.sp, fontWeight = FontWe
 
 val DriverGuardianColors = lightColorScheme(primary = Main, surface = Surface, onSurface = OnSurface)
 
+/** Shadow tint: the brand blue, strong enough to read as depth on the pale background. */
+internal val ShadowAmbient = Main.copy(alpha = 0.30f)
+internal val ShadowSpot = Main.copy(alpha = 0.45f)
+
 /** The mockups' white card: soft blue-tinted shadow, hairline edge. */
-internal fun Modifier.card(shape: Shape = CardShape, color: Color = Color.White, elevation: Dp = 6.dp): Modifier =
-    shadow(elevation, shape, ambientColor = Main.copy(alpha = 0.12f), spotColor = Main.copy(alpha = 0.12f))
+internal fun Modifier.card(shape: Shape = CardShape, color: Color = Color.White, elevation: Dp = 10.dp): Modifier =
+    shadow(elevation, shape, ambientColor = ShadowAmbient, spotColor = ShadowSpot)
         .clip(shape).background(color).border(1.dp, if (color == Color.White) Hairline else color, shape)
 
 /** Icon on a pale round badge, as in the Stats mockup's tiles. */
