@@ -34,8 +34,30 @@ export function tripFacts(role: Role, now = Date.now()): string[] {
   return facts;
 }
 
-export async function answerQuestion(question: string, askerName: string, role: Role): Promise<string> {
-  const facts = tripFacts(role);
+const ACTION_LABELS: Record<string, string> = {
+  calm_checkin: "a calm check-in",
+  start_conversation: "having a conversation",
+  suggest_music: "upbeat music",
+  suggest_rest_stop: "a rest stop suggestion",
+  calm_slowdown: "a calm reminder to ease off",
+  breathing_prompt: "guided breathing",
+  report_card_reminder: "a report-card reminder",
+  firm_warning: "a firm warning",
+  family_voice_warning: "a warning in a family member's voice",
+};
+
+export type PolicySummary = { actions: { action: string; updates: number; mean_reward: number | null }[] };
+
+/** What the adaptive-recommendation layer has learned works best for this driver, as a fact for the LLM. Empty until something has clearly worked. */
+export function policyFacts(driver: string, policy: PolicySummary): string[] {
+  const best = policy.actions
+    .filter((a) => a.updates >= 2 && a.mean_reward != null && a.mean_reward > 0 && ACTION_LABELS[a.action])
+    .sort((a, b) => b.mean_reward! - a.mean_reward!)[0];
+  return best ? [`So far, ${ACTION_LABELS[best.action]} has worked best for keeping ${driver} safe when they're warned.`] : [];
+}
+
+export async function answerQuestion(question: string, askerName: string, role: Role, extraFacts: string[] = []): Promise<string> {
+  const facts = [...tripFacts(role), ...extraFacts];
   try {
     return await chat({
       model: config.openRouter.models.answer,

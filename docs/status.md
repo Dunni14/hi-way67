@@ -2,18 +2,18 @@
 
 Every feature from the [root README](../README.md), checked against the code on 2026-10-03.
 
-**Legend:** **Done**: implemented and wired end to end on the backend · **Partial**: some of it exists · **Stub**: an interface or placeholder exists, no real implementation · **Not started**: no code in the repo.
+**Legend:** **Done**: implemented and wired end to end · **Partial**: some of it exists · **Stub**: an interface or placeholder exists, no real implementation · **Not started**: no code in the repo.
 
-The Android app is not in the repository. Any feature that lives on the phone is **Not started**, even where the backend is ready to receive its output.
+The Android app (`android/`) is an early prototype. It runs Presage on the front camera and shows heart rate, but it doesn't connect to the backend yet. Any phone feature beyond that is **Not started**, even where the backend is ready to receive its output. Details: [phone-app.md](phone-app.md#current-state).
 
 ## 1. Driver sensing (Presage)
 
 | Feature | Status | Notes |
 |---|---|---|
-| Presage SDK on device (eyes, head pose, expression, HR, HRV, breathing) | Not started | Phone-side. No Android code in repo. |
+| Presage SDK on device | Partial | SmartSpectra 3.4.0 runs on the front camera. A debug overlay shows heart rate, blinking (with eyes-closed % and blinks/min over 60 s), talking, top expression, the landmark mesh, and eye/mouth ratios computed from the landmarks. Nothing turns these into `yawn`/`nod` events or a score yet. HRV and breathing are unused. |
 | 60 s per-trip baseline | Not started | Phone-side. |
 | 10 s rolling-average smoothing | Not started | Phone-side. |
-| Drop low-confidence frames | Not started | Phone-side. |
+| Drop low-confidence frames | Partial | The app shows the SDK's validation hint ("hold still" and similar) and clears the reading when validation is not `OK`. Confidence is displayed but not used to filter. |
 | Drowsy / reckless / distracted state derivation | Not started | Phone-side. The protocol has no `distracted` sub-score or event yet. Only `drowsy` and `reckless` exist. |
 
 ## 2. Pre-trip check (stretch)
@@ -30,6 +30,7 @@ The Android app is not in the repository. Any feature that lives on the phone is
 | Feature vector **x**, two weight vectors, base risk `r = w · x` | Not started | Phone-side. The backend receives the final `R`, `drowsy`, `reckless` and stores the optional `features` map without reading it. |
 | Context/speed multiplier `m` | Not started | Phone-side. The backend applies kids-in-car only as a tier bump (see §4), not as a multiplier. |
 | Server-side logistic risk engine (REST + Postgres) | Done (backend) | Odds-ratio weights, baseline, overrides, cooldowns, feedback, report. See [risk-engine.md](risk-engine.md). The phone must call it; the legacy phone-computed path still works. |
+| Adaptive recommendations (LinUCB bandit, Tiger Data) | Done (backend) | Picks the intervention within tier 1/2; `intervention` on the windows response, `GET /drivers/{id}/policy`. Off without `TIGER_DATABASE_URL`. The in-process voice path speaks the chosen intervention; REST clients choose their own script from `intervention.id`. `family_voice_warning` needs `ELEVENLABS_FAMILY_VOICE_ID`. See [risk-engine.md](risk-engine.md#adaptive-recommendations-contextual-bandit). |
 | Hand-set weights | Not started | Phone-side (legacy path). The engine's weights live in `backend/src/risk/weights.json`. |
 | "I'm fine" gradient step on **w** | Partial | Backend recognizes the phrase and sends `{"type":"dismissed"}`. Applying the nudge and showing weights on a debug screen is phone work and not started. |
 | Ridge regression fitting | Not started | Roadmap in the README too. |

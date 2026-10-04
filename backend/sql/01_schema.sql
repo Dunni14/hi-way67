@@ -178,6 +178,7 @@ CREATE TABLE IF NOT EXISTS bandit_events (
   learned    boolean NOT NULL DEFAULT false,
   reward     double precision,              -- null until computed
   reward_ts  timestamptz,
+  false_alarm boolean NOT NULL DEFAULT false,   -- set by src/bandit/store.ts markFalseAlarm
   PRIMARY KEY (trip_id, ts)
 );
 SELECT create_hypertable('bandit_events', 'ts',
