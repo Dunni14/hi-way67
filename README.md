@@ -1,11 +1,11 @@
 # auto-ai
 An AI driving partner
 
-# Driver Guardian (working title)
+# AutoAI
 
 A phone on the dash that watches the driver, scores drowsiness and recklessness in real time, talks to the driver by voice, and keeps family and friends in the loop over iMessage. When the driver starts nodding off, the agent asks the group chat to roast them awake, and the phone reads the roasts out loud.
 
-Built for MHacks 26. Submission deadline: noon Sunday.
+Built for MHacks 26
 
 ## Tracks we are targeting
 
