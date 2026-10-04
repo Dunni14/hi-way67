@@ -7,11 +7,11 @@ import kotlin.math.sin
  * script seconds since trip start; the backend's risk engine (10 s windows) scores it:
  *   0-60 s    rested driver: the engine's 6 baseline windows
  *   60-130 s  still fine, score about 4
- *   130 s+    drowsy: eyes 40% closed, slow breathing, a yawn per window. The engine's drowsy level
- *             reaches 0.67, and after 3 such windows (script 180 s) its drowsy_sustained_3
- *             override fires tier 2: the first spoken warning.
- *   256 s     a 2.2 s eye closure in window 251-260: the microsleep override fires tier 3
- *             (urgent voice, alarm, contacts).
+ *   130 s+    drowsy: eyes 40% closed, slow breathing, a yawn per window. The drowsy level climbs
+ *             past 0.45 (drowsy_onset: tier 1, a spoken check-in that listens) and then 0.6
+ *             (drowsy_sustained_3: tier 2, a firmer check-in).
+ *   256 s     a 2.2 s eye closure in window 251-260: the microsleep override asks the driver to
+ *             answer. Saying anything stops it there; silence sounds the alarm and texts contacts.
  * With DemoClock that is about 0:15 and 1:08 real time. backend `npm run fake-phone` sends the
  * same profile window by window.
  */

@@ -14,7 +14,7 @@ The phone app is [`frontend/`](../frontend) (Driver Guardian). It **senses and d
 | Eye closure from landmarks | Built | `core/FaceGeometry.kt`: eye aspect ratio → closure 0..1 (assumes the MediaPipe 478-point layout). |
 | Yawn detection | Built | Presage has no yawn output (its face metrics are landmarks, blinking, talking, expressions). `FaceSampler` runs every landmark frame (MediaPipe Face Mesh, confirmed in the SDK) through `YawnDetector`: mouth openness ≥ 0.6 held 1.5 s, ≤ 150 ms jitter tolerated, one per 5 s. Emits the `yawn` event. Threshold to be tuned on device (Debug screen / `adb logcat -s Presage`). |
 | Nod detection | Not started | `nod` event never set. |
-| Longest continuous eye closure | Built | `FaceSampler` tracks closure runs across seconds; sent as `longest_eye_closure_s`, which drives the engine's microsleep override (≥ 1.5 s → tier 3). |
+| Longest continuous eye closure | Built | `FaceSampler` tracks closure runs across seconds; sent as `longest_eye_closure_s`, which drives the engine's microsleep override (≥ 1.5 s → urgent check-in, then the alarm if unanswered). A run ends at a frame without a full mesh or a frame gap over 250 ms, so a lost face can't fake a long closure. |
 | 60 s per-trip baseline | Done (backend) | Engine: first 6 windows set baseline heart and breathing rate; tier 0 meanwhile. |
 | Smoothing | Done (backend) | Engine: rolling mean over 3 windows before scoring. |
 | Drop low-confidence frames | Built | Phone `WindowAggregator` ignores frames without a valid face; the engine goes `degraded` (speed and motion only) after 3 faceless windows. |
@@ -49,7 +49,7 @@ The tree is split between phone and backend. See [architecture.md](architecture.
 | Tiers 1 / 2 / 3 at score 40 / 70 / 85, drowsy vs reckless dominance | Done (backend) | Engine `decision.ts`. |
 | Hold before firing | Done (backend) | A score tier must hold 2 windows. |
 | Cooldowns | Done (backend) | Voice 2 min per tier, contacts 10 min (by window timestamps). |
-| Overrides | Done (backend) | Microsleep → tier 3; drowsy ≥ 0.6 for 3 windows → tier 2, 12 windows → tier 3; tier 2 for 12 windows → tier 3. |
+| Overrides | Done (backend) | Drowsy ≥ 0.45 in 2 of 3 windows → tier 1 (`drowsy_onset`); ≥ 0.6 in 3 of 4 → tier 2; 12 in a row → tier 3; tier 2 for 12 windows → tier 3. A first microsleep is an urgent spoken check-in (alarm only if the driver doesn't answer within the 5 s listen window); a second within 2 min alarms at once. Yawns weigh 0.35 (full at 1 per window). Replaying live trip `4479d2a6` (which had 2 straight alarms and no check-ins): now 2 listening nudges and 2 urgent check-ins, no alarm unless unanswered. See [risk-engine.md](risk-engine.md#behavior-notes). |
 | R < 40: log only | Done | Every `risk_window` is stored; no action. |
 | 40 / 70: voice only, never the group chat | Done | `orchestrator.ts` `onAlert`. |
 | Kids in car raises the tier | Done (backend) | Engine raises any active tier by one (set at trip start). |
@@ -86,6 +86,7 @@ The tree is split between phone and backend. See [architecture.md](architecture.
 | Flow 2: contacts → driver | Done | Queued and spoken. Replies "isn't driving right now" when no trip. |
 | Flow 3: driver → contacts | Done | "Tell her I'm stopping in ten" → `🗣️ Alex says: "…"`. |
 | Flow 4: the roast | Done | 3 min window; resolves when the driver talks back. |
+| Wake-up sound poll | Done (backend + app), not tried on Telegram | Tier 1/2 drowsy opens a 25 s group vote (`1`/`2`/`3` or 🐓/📯/🐐, as a reply or a reaction to the poll message); the winner goes to the phone as `play_sound`; tier 3 cancels it. Unit-tested, and run end to end with `fake-phone -- --poll` (`NO_SPECTRUM`, votes through `POST /dev/chat`), including the early close once everyone voted. **Not verified on Telegram:** text votes from a real group, and whether reaction votes arrive at all (they need `message_reaction` updates, which the provider doesn't request, and the bot must be a group admin). The app falls back to the alarm tone until the files named in `backend/src/agent/sounds.json` are added as `res/raw/<id>.mp3`. See [imessage-agent.md](imessage-agent.md#wake-up-sound-poll). |
 | Message classification (question / to driver / roast / arrival pref / chatter) | Done | LLM via OpenRouter, keyword fallback if the LLM fails. |
 | No group alarm for mid-tier events | Done | |
 | No delivery during hard braking | Done | Queue pauses 10 s on a `hard_brake` event. |

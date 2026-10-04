@@ -52,12 +52,24 @@ Chat text is made sayable by `shortenForSpeech`: whitespace is collapsed and URL
 
 | Speak | `context` | `listenAfterMs` |
 |---|---|---|
-| 40 / 70 alert | `checkin` | 5000 |
+| 40 / 70 alert, drowsy (always ends in a question, e.g. "How are you feeling?") | `checkin` | 5000 |
+| 40 / 70 alert, reckless | `checkin` | 5000 for the default lines and the rest-stop offer, 0 for other bandit lines |
+| Urgent check-in after a first microsleep | `checkin` | 5000 |
 | 85 alert | `checkin` | 0 |
 | Permission question (sharing `never`) | `permission` | 5000 |
 | Family message | `after_message` | 5000 |
 | Roast | `roast` | 5000 |
 | Acks | `info` | 0 |
+
+## Urgent check-in
+
+A first microsleep doesn't sound the alarm. The engine marks it `check_in_urgent` and `orchestrator.ts`:
+
+1. Speaks "Ray! Your eyes just closed for a couple of seconds. Are you with me? Say something." (priority, tier 85, listens 5 s).
+2. **Any utterance** before the listen window ends, plus a 1.5 s grace for late speech-to-text, counts as an answer: "Good. Stay with me, and take a break soon." No alarm. A "tell …" in the answer still goes to the group.
+3. **No answer:** sends `alarm` to the phone, then runs the usual 85 flow (urgent line, guardian alert, roast).
+
+The answer window starts when the phone sends `speak_done` (or the queue times out, or the phone isn't connected, which escalates to contacts). A second microsleep within 2 minutes alarms straight away. In a `checkin` context, replies other than "tell …" are never posted to the group, which is why drowsy check-ins can always listen.
 
 ## Driver intent parsing
 

@@ -68,11 +68,13 @@ ON CONFLICT (tier) DO UPDATE
 -- override_rules
 -- ---------------------------------------------------------------------
 INSERT INTO override_rules (rule_id, description, signal, threshold, consecutive_windows, effect, tier) VALUES
-  (1, 'Microsleep: eyes closed 1.5 s or more',            'longest_eye_closure_s', 1.5, 1,  'set_tier',  3),
-  (2, 'Sustained drowsiness, 30 s',                       'drowsy',                0.6, 3,  'min_tier',  2),
+  (1, 'Microsleep: eyes closed 1.5 s or more (check-in)', 'longest_eye_closure_s', 1.5, 1,  'set_tier',  3),
+  (2, 'Sustained drowsiness: 3 of 4 windows',             'drowsy',                0.6, 3,  'min_tier',  2),
   (3, 'Sustained drowsiness, 2 min',                      'drowsy',                0.6, 12, 'set_tier',  3),
   (4, 'Tier 2 held for 2 min',                            'tier',                  2,   12, 'set_tier',  3),
-  (5, 'Kids in car and tier 1 or higher: raise one tier', 'kids_in_car',           1,   1,  'raise_one', NULL)
+  (5, 'Kids in car and tier 1 or higher: raise one tier', 'kids_in_car',           1,   1,  'raise_one', NULL),
+  (6, 'Drowsiness onset: drowsy 0.45+ in 2 of 3 windows', 'drowsy',                0.45, 2, 'min_tier',  1),
+  (7, 'Second microsleep within 2 min: alarm at once',    'longest_eye_closure_s', 1.5, 1,  'set_tier',  3)
 ON CONFLICT (rule_id) DO UPDATE
   SET description = EXCLUDED.description, signal = EXCLUDED.signal, threshold = EXCLUDED.threshold,
       consecutive_windows = EXCLUDED.consecutive_windows, effect = EXCLUDED.effect, tier = EXCLUDED.tier;

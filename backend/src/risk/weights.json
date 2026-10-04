@@ -32,11 +32,11 @@
   },
   "levels": {
     "drowsy": {
-      "eyeClosure": 0.4,
+      "eyeClosure": 0.35,
       "eyeClosureFull": 0.3,
-      "yawns": 0.2,
-      "yawnsFull": 3,
-      "engagement": 0.2,
+      "yawns": 0.35,
+      "yawnsFull": 1,
+      "engagement": 0.1,
       "breathing": 0.2,
       "breathingFull": 4
     },
@@ -59,8 +59,12 @@
   "holdWindows": 2,
   "overrides": {
     "microsleepS": 1.5,
+    "microsleepRepeatS": 120,
+    "drowsyNudgeLevel": 0.45,
+    "drowsyNudgeOf": [2, 3],
     "drowsyLevel": 0.6,
     "drowsyFloorWindows": 3,
+    "drowsyFloorOf": 4,
     "drowsyUrgentWindows": 12,
     "tier2UrgentWindows": 12
   },

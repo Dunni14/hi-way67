@@ -46,7 +46,7 @@ after(async () => {
 
 test("config tables are seeded", { skip }, async () => {
   const { rows } = await pool.query(`SELECT (SELECT count(*) FROM risk_factors)::int AS rf, (SELECT count(*) FROM override_rules)::int AS orr, (SELECT count(*) FROM tiers)::int AS t`);
-  assert.deepEqual(rows[0], { rf: 6, orr: 5, t: 4 });
+  assert.deepEqual(rows[0], { rf: 6, orr: 7, t: 4 });
 });
 
 test("microsleep writes window and event, readable through the store", { skip }, async () => {

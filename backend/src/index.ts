@@ -7,6 +7,8 @@ import { createOrchestrator } from "./orchestrator.ts";
 import { startPhoneServer } from "./ws/server.ts";
 import { startSpectrum, hasGroup } from "./agent/spectrum.ts";
 import { roast } from "./agent/roast.ts";
+import { soundPoll } from "./agent/soundPoll.ts";
+import { createDevChatRoute } from "./dev/devChat.ts";
 import { driverQueue } from "./voice/driverQueue.ts";
 import pg from "pg";
 import { PgRiskStore, type Db } from "./risk/store/pg.ts";
@@ -85,6 +87,9 @@ if (riskStore) {
   console.error("[risk] no risk engine: phone windows will not be scored");
 }
 
+// Without Spectrum, POST /dev/chat stands in for the group chat (src/dev/devChat.ts).
+const devChat = process.env.NO_SPECTRUM ? createDevChatRoute(onChat) : null;
+
 startPhoneServer(config.port, onPhone, () => ({
   driverName: trip.driverName, // the driver id trips are stored under (GET /drivers/{id}/trips)
   tripActive: trip.active,
@@ -93,7 +98,9 @@ startPhoneServer(config.port, onPhone, () => ({
   roastActive: roast.active,
   queued: driverQueue.length,
   groupChatKnown: hasGroup(),
-}), riskRoutes);
+  pollActive: soundPoll.isActive,
+  pollVotes: soundPoll.votes.size,
+}), async (req, res) => (devChat ? await devChat(req, res) : false) || (riskRoutes ? await riskRoutes(req, res) : false));
 
 if (process.env.NO_SPECTRUM) {
   console.log("[spectrum] skipped (NO_SPECTRUM set)");

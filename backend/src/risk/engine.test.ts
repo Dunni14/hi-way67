@@ -43,10 +43,12 @@ test("all neutral: score 0, tier 0", () => {
   assert.equal(e.tier, 0);
 });
 
-test("drowsy only: ~31.2, tier 0 by score; override 2 -> tier 2 on 3rd scored window", () => {
+test("drowsy only: ~31.2, tier 0 by score; onset -> tier 1 on the 2nd window, sustained -> tier 2 on the 3rd", () => {
   const out = run(DROWSY, 8, ctx0, { eye_closure_frac: 0.3, yawns: 3, engagement: 0 }).slice(6);
   assert.ok(Math.abs(last(out).score - 31.2) < 0.1);
-  assert.deepEqual(out.slice(0, 3).map((e) => e.tier), [0, 0, 2]);
+  assert.deepEqual(out.slice(0, 3).map((e) => e.tier), [0, 1, 2]);
+  assert.equal(out[1]!.override, "drowsy_onset");
+  assert.ok(out[1]!.actions.includes("voice_nudge"));
   assert.equal(out[2]!.override, "drowsy_sustained_3");
   assert.ok(out[2]!.actions.includes("voice_warning"));
 });
@@ -82,12 +84,73 @@ test("agitated + speeding 1.0: z capped, score 100, tier 3", () => {
   assert.equal(e.tier, 3);
 });
 
-test("longest_eye_closure_s = 2.0 -> tier 3 on that window, no hold", () => {
-  const out = run({ longest_eye_closure_s: 2 }, 1);
-  const e = last(out);
+test("first microsleep: tier 3 on that window, but a check-in (no alarm, no notify)", () => {
+  const e = last(run({ longest_eye_closure_s: 2 }, 1));
   assert.equal(e.tier, 3);
   assert.equal(e.override, "microsleep");
-  assert.ok(e.actions.includes("notify_contacts"));
+  assert.deepEqual(e.actions, ["check_in_urgent"]);
+});
+
+/** 6 neutral baseline windows, then `windows` (10 s apart); returns the scored evaluations. */
+function sequence(windows: Partial<SignalWindow>[], ctx = ctx0) {
+  let st: EngineState = initialState();
+  const out: Evaluation[] = [];
+  [...Array<Partial<SignalWindow>>(6).fill({}), ...windows].forEach((o, i) => {
+    const r = processWindow(st, win(i, o), ctx, cfg);
+    st = r.state;
+    out.push(r.evaluation);
+  });
+  return out.slice(6);
+}
+
+test("a second microsleep within 2 min alarms at once; later it is a check-in again", () => {
+  const ms = { longest_eye_closure_s: 2 };
+  // Microsleeps at 0 s, 60 s (repeat) and 200 s (more than 120 s after the last).
+  const out = sequence([ms, {}, {}, {}, {}, {}, ms, ...Array(13).fill({}), ms]);
+  assert.deepEqual(out[0]!.actions, ["check_in_urgent"]);
+  assert.equal(out[6]!.override, "microsleep_repeat");
+  assert.ok(out[6]!.actions.includes("voice_urgent") && out[6]!.actions.includes("notify_contacts"));
+  assert.equal(out[20]!.override, "microsleep");
+  assert.deepEqual(out[20]!.actions, ["check_in_urgent"]);
+});
+
+test("an open microsleep check-in holds back other tier 3 alarms for 2 min", () => {
+  const drowsy = { eye_closure_frac: 0.3, yawns: 1, engagement: 0 };
+  // 11 drowsy windows, a microsleep, then more drowsy windows: drowsy_sustained_12 hits right after the microsleep.
+  const out = sequence([...Array(11).fill(drowsy), { ...drowsy, longest_eye_closure_s: 2 }, ...Array(14).fill(drowsy)]);
+  assert.deepEqual(out[11]!.actions, ["check_in_urgent"]);
+  const held = out.slice(12, 23); // windows 10..110 s after the microsleep
+  const trace = JSON.stringify(held.map((e) => [e.tier, e.override, e.actions]));
+  assert.ok(held.some((e) => e.tier === 3), trace);
+  assert.ok(held.every((e) => !e.actions.includes("voice_urgent") && !e.actions.includes("notify_contacts")), trace);
+  const after = out.slice(23).find((e) => e.actions.includes("voice_urgent"));
+  assert.ok(after, "after 120 s the sustained rule alarms again");
+  assert.equal(after.override, "drowsy_sustained_12");
+});
+
+test("swinging drowsy signals still reach tier 2 (3 of the last 4 windows)", () => {
+  // Yawning every other window: smoothed drowsy 0.68, 0.57, 0.68, 0.68. Three in a row never happens.
+  const yawn = { eye_closure_frac: 0.3, yawns: 1, engagement: 0 };
+  const none = { eye_closure_frac: 0.3, engagement: 0 };
+  const out = sequence([yawn, none, yawn, none, yawn, yawn]);
+  const trace = JSON.stringify(out.map((e) => [e.tier, e.override, e.levels.drowsy.toFixed(2)]));
+  assert.ok(out.some((e) => e.tier === 2 && e.override === "drowsy_sustained_3"), trace);
+});
+
+test("one yawn per window counts fully: +0.35 drowsy", () => {
+  const out = sequence([{ yawns: 1 }, { yawns: 1 }, { yawns: 1 }]);
+  assert.ok(Math.abs(last(out).levels.drowsy - 0.35) < 0.01, String(last(out).levels.drowsy));
+});
+
+test("drowsy onset: 0.45+ in 2 of the last 3 windows -> tier 1 nudge", () => {
+  const mild = { eye_closure_frac: 0.15, yawns: 1, engagement: 1 }; // about 0.17 + 0.35 = 0.52, below the 0.6 floor
+  const out = sequence([mild, mild, mild, mild]); // smoothed 0.17, 0.35, 0.52, 0.52
+  const trace = JSON.stringify(out.map((e) => [e.tier, e.override, e.levels.drowsy.toFixed(2)]));
+  const onset = out.find((e) => e.override === "drowsy_onset");
+  assert.ok(onset, trace);
+  assert.equal(onset.tier, 1);
+  assert.ok(onset.actions.includes("voice_nudge"));
+  assert.ok(out.every((e) => e.tier < 2), trace);
 });
 
 test("agitated + kids: ~67.0, tier 1 raised to 2", () => {

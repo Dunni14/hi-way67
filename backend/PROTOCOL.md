@@ -34,6 +34,8 @@ The phone senses and displays; the backend's risk engine (`src/risk`) scores eve
 | `contacts` | `list[]` of `{handle, name, role, platform}`, `groupBound`, `groupLink` (or `null`) | show the allowlist; "Create group" opens `groupLink` |
 | `contact_invite` | `name`, `code`, `link` (`https://t.me/<bot>?start=<code>`) | share `link` with the contact; single use, 15 min |
 | `contact_joined` | `name`, `role` | the contact opened the link and is allowlisted; refresh with `contacts_list` |
+| `alarm` | none | sound the alarm now (no answer to the microsleep check-in) |
+| `play_sound` | `id` (from `src/agent/sounds.json`) | sound poll winner: play `res/raw/<id>` now, no reply |
 | `error` | `message` | log it |
 
 The backend decides tiers (holds, overrides such as microsleep, cooldowns, kids in car), speaks, notifies contacts and runs the roast. The phone only reports raw signals.

@@ -21,8 +21,12 @@ const Config = z.object({
   holdWindows: z.number().int().positive(),
   overrides: z.object({
     microsleepS: pos,
+    microsleepRepeatS: pos,
+    drowsyNudgeLevel: pos,
+    drowsyNudgeOf: z.tuple([z.number().int().positive(), z.number().int().positive()]),
     drowsyLevel: pos,
     drowsyFloorWindows: z.number().int().positive(),
+    drowsyFloorOf: z.number().int().positive(),
     drowsyUrgentWindows: z.number().int().positive(),
     tier2UrgentWindows: z.number().int().positive(),
   }),

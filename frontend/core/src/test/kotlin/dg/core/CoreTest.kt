@@ -90,6 +90,8 @@ class CoreTest {
         assertEquals(BackendFrame.Dismissed(), decodeBackendFrame("""{"type":"dismissed"}"""))
         assertEquals(BackendFrame.Dismissed("drowsy", 0.95), decodeBackendFrame("""{"type":"dismissed","factor":"drowsy","multiplier":0.95}"""))
         assertEquals(BackendFrame.Navigate("rest stop"), decodeBackendFrame("""{"type":"navigate","query":"rest stop"}"""))
+        assertEquals(BackendFrame.PlaySound("goat"), decodeBackendFrame("""{"type":"play_sound","id":"goat"}"""))
+        assertEquals(BackendFrame.Alarm, decodeBackendFrame("""{"type":"alarm"}"""))
     }
 
     @Test fun reportDecodes() {
@@ -201,6 +203,26 @@ class CoreTest {
         assertTrue(longest[6] in 1_900L..2_100L, "1 s into the closure: ${longest[6]}")
         assertTrue(longest[34] >= 29_000L, "end of a 30 s closure: ${longest[34]}")
         assertEquals(0L, longest[36])
+    }
+
+    /** Closed frames on both sides of a lost face (or a frame gap) are two short runs, not one microsleep. */
+    @Test fun faceSamplerEndsClosedRunAtGaps() {
+        val shut = mesh(eyeGap = 0.5, lipGap = 0.5)
+        val partial = shut.take(100) // incomplete mesh: no eye ratio
+        // 0.9 s closed, 2 s without a mesh, 0.9 s closed (30 fps, µs timestamps).
+        val lostFace = FaceSampler()
+        var t = 0L
+        repeat(27) { t += 33; lostFace.add(t * 1000, shut) }
+        repeat(60) { t += 33; lostFace.add(t * 1000, partial) }
+        repeat(27) { t += 33; lostFace.add(t * 1000, shut) }
+        assertTrue(lostFace.drain().longestClosedMs < 1_000L, "lost face")
+        // 0.9 s closed, no frames for 2 s, 0.9 s closed.
+        val dropped = FaceSampler()
+        t = 0L
+        repeat(27) { t += 33; dropped.add(t * 1000, shut) }
+        t += 2_000
+        repeat(27) { t += 33; dropped.add(t * 1000, shut) }
+        assertTrue(dropped.drain().longestClosedMs < 1_000L, "dropped frames")
     }
 
     @Test fun yawnNeedsSustainedOpenMouthAndRefractory() {

@@ -15,13 +15,15 @@ export type SpeakItem = {
   priority?: boolean;
   /** ElevenLabs voice to use instead of the default (e.g. a family member's voice). */
   voiceId?: string;
+  /** Called once the phone is done with it (speak_done, a timeout, or the phone not connected). */
+  onDone?: () => void;
 };
 
 const HARD_BRAKE_PAUSE_MS = 10_000;
 
 class DriverQueue {
   private items: SpeakItem[] = [];
-  private inFlight: { id: string; timer: NodeJS.Timeout } | null = null;
+  private inFlight: { id: string; timer: NodeJS.Timeout; onDone?: () => void } | null = null;
   private pausedUntil = 0;
   private resumeTimer: NodeJS.Timeout | null = null;
 
@@ -48,7 +50,9 @@ class DriverQueue {
   done(id: string) {
     if (this.inFlight?.id !== id) return;
     clearTimeout(this.inFlight.timer);
+    const onDone = this.inFlight.onDone;
     this.inFlight = null;
+    onDone?.();
     void this.pump();
   }
 
@@ -64,7 +68,7 @@ class DriverQueue {
     const id = randomUUID();
     const listenAfterMs = item.listenAfterMs ?? 0;
     // Hold the slot while TTS runs so a second pump can't overtake us.
-    this.inFlight = { id, timer: setTimeout(() => this.done(id), estimateMs(item.text) + listenAfterMs + 3000) };
+    this.inFlight = { id, timer: setTimeout(() => this.done(id), estimateMs(item.text) + listenAfterMs + 3000), onDone: item.onDone };
 
     let audio = "";
     try {

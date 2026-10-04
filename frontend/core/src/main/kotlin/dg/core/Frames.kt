@@ -161,6 +161,10 @@ sealed interface BackendFrame {
         val image: String,
     ) : BackendFrame
     data class Navigate(val query: String) : BackendFrame
+    /** Sound poll winner: play the bundled res/raw/<id> now (rooster, airhorn, goat). No reply. */
+    data class PlaySound(val id: String) : BackendFrame
+    /** No answer to the urgent check-in after a microsleep: sound the alarm now. */
+    data object Alarm : BackendFrame
     data class Error(val message: String) : BackendFrame
     /** A line to say to the driver. [audio] is base64 mp3, empty if TTS failed (fall back to on-device TTS). */
     data class Speak(
@@ -232,6 +236,8 @@ fun decodeBackendFrame(text: String): BackendFrame {
             image = str("image") ?: "",
         )
         "navigate" -> BackendFrame.Navigate(str("query") ?: "rest stop")
+        "play_sound" -> BackendFrame.PlaySound(str("id") ?: "airhorn")
+        "alarm" -> BackendFrame.Alarm
         "error" -> BackendFrame.Error(str("message") ?: "")
         "speak" -> {
             val id = str("id") ?: return BackendFrame.Unknown(type)

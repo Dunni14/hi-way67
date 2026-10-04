@@ -5,13 +5,14 @@ import type { TripStore } from "./trip/store.ts";
 import type { PhoneMsg, Tier, Dominant } from "./ws/protocol.ts";
 import { sendToPhone } from "./ws/server.ts";
 import { driverQueue } from "./voice/driverQueue.ts";
-import { ackLine, alertLine, ASKS_REST_STOP, gradeOf, interventionLine, messageLine, permissionLine, roastLine, speedingNudge } from "./voice/lines.ts";
+import { ackLine, alertLine, ASKS_REST_STOP, gradeOf, interventionLine, messageLine, permissionLine, roastLine, speedingNudge, urgentCheckInLine } from "./voice/lines.ts";
 import { post, dm, postImage, dmImage, hasGroup, type Inbound } from "./agent/spectrum.ts";
 import { classify, shortenForSpeech } from "./agent/classifier.ts";
 import { answerQuestion } from "./agent/answer.ts";
 import { parseDriverUtterance } from "./agent/driverIntent.ts";
 import { roast } from "./agent/roast.ts";
 import { allContacts, contactPlatform, removeContact, setContactRole } from "./agent/contacts.ts";
+import { parseVote, pollText, resultText, soundInfo, soundPoll, type PollResult } from "./agent/soundPoll.ts";
 import { createInvite } from "./agent/invites.ts";
 import type { Evaluation } from "./risk/types.ts";
 import type { EvaluationExtra, RiskService } from "./risk/service.ts";
@@ -23,10 +24,14 @@ import type { LocationFix } from "./gps/types.ts";
 import { config } from "./config.ts";
 
 const LISTEN_MS = 5000;
+/** After the urgent check-in's listen window ends, wait this long for a late speech-to-text result before the alarm. */
+const ANSWER_GRACE_MS = 1500;
 
 export function createOrchestrator(store: TripStore, restStops = new RestStopFinder(riskConfig)) {
   const d = () => trip.driverName;
   let pendingPermission: { dominant: Dominant } | null = null;
+  // A first microsleep asks the driver to answer; no answer by the end of the listen window -> alarm (see onUrgentCheckIn).
+  let urgentCheck: { dominant: Dominant; score: number; timer: NodeJS.Timeout | null } | null = null;
   // Extra facts for chat answers (what the bandit has learned); set once the risk service exists.
   let insights: (() => Promise<string[]>) | null = null;
   const setInsights = (fn: () => Promise<string[]>) => {
@@ -198,6 +203,8 @@ export function createOrchestrator(store: TripStore, restStops = new RestStopFin
     engineTrip = null;
     trip.end();
     roast.resolve();
+    soundPoll.cancel();
+    clearUrgentCheck();
     driverQueue.clear();
     console.log(`[trip] ended: ${summary}`);
 
@@ -236,6 +243,19 @@ export function createOrchestrator(store: TripStore, restStops = new RestStopFin
     const fix = extra?.location ?? trip.lastFix;
     // Warm the rest stop cache while the driver is only mildly drowsy, so tier 2 and 3 can name a stop without waiting.
     if (ev.dominant === "drowsy" && ev.tier >= 1 && fix) void restStops.next(fix);
+
+    // Wake-up sound poll: opened at tier 1/2 drowsy, cancelled silently when tier 3 takes over.
+    const pollAction = soundPoll.decide({ tier: ev.tier, dominant: ev.dominant, sharingMode: trip.sharingMode, roastActive: roast.active });
+    if (pollAction === "cancel") {
+      soundPoll.cancel();
+      console.log("[poll] cancelled: urgent alert takes over");
+    } else if (pollAction === "start") {
+      await startSoundPoll();
+    }
+
+    if (ev.actions.includes("check_in_urgent")) return onUrgentCheckIn(ev);
+    // A repeat microsleep (or any urgent alert) alarms on its own: drop a check-in still waiting.
+    if (ev.actions.includes("voice_urgent")) clearUrgentCheck();
 
     if (ev.tier === 0) return;
     const voice = ev.actions.some((a) => a.startsWith("voice_"));
@@ -291,12 +311,14 @@ export function createOrchestrator(store: TripStore, restStops = new RestStopFin
         (id && interventionLine(id, { grade: gradeOf(trip.maxR) })) ||
         (tier === 40 && dominant === "reckless" && opts.speedingLine) ||
         alertLine(tier, dominant, { restMiles: opts.restMiles });
+      // A drowsy check-in always asks and listens ("I'm fine" eases off, "yes" opens a rest stop). Only a
+      // "tell …" reply reaches the group chat (driverIntent.ts), so listening doesn't leak chit-chat.
+      const checkIn = dominant === "drowsy";
       driverQueue.enqueue({
-        text: line,
+        text: checkIn && !line.trim().endsWith("?") ? `${line} How are you feeling?` : line,
         tier,
         context: "checkin",
-        // Only the rest-stop offer waits for a yes/no; other replies would be relayed to the group chat.
-        listenAfterMs: id && !ASKS_REST_STOP.has(id) ? 0 : LISTEN_MS,
+        listenAfterMs: checkIn || !id || ASKS_REST_STOP.has(id) ? LISTEN_MS : 0,
         priority: true,
         voiceId: id === "family_voice_warning" ? config.elevenLabs.familyVoiceId || undefined : undefined,
       });
@@ -311,6 +333,62 @@ export function createOrchestrator(store: TripStore, restStops = new RestStopFin
     } else if (notify === "notify") {
       await escalate(dominant);
     }
+  }
+
+  async function startSoundPoll() {
+    soundPoll.start(onPollClosed);
+    console.log("[poll] wake-up sound poll open");
+    const ids = await post(pollText(d())).catch((err) => (logPostError(err), [] as string[]));
+    ids.forEach((id) => soundPoll.addMessageId(id));
+  }
+
+  function onPollClosed(r: PollResult) {
+    console.log(`[poll] closed: ${r.winner} (${JSON.stringify(r.tally)})`);
+    sendToPhone({ type: "play_sound", id: r.winner });
+    void post(resultText(r)).catch(logPostError);
+  }
+
+  /** A poll vote from chat ("1", "🐓", or that emoji as a reaction to the poll message). True if it was one. */
+  function takeVote({ contact, text, reactionTo }: Inbound): boolean {
+    if (!soundPoll.isActive) return false;
+    if (reactionTo && !soundPoll.isPollMessage(reactionTo)) return false;
+    const choice = parseVote(text);
+    if (!choice || !soundPoll.vote(contact.handle, choice)) return false;
+    console.log(`[poll] ${contact.name} voted ${soundInfo(choice).title}`);
+    if (soundPoll.allVoted(allContacts().map((c) => c.handle))) soundPoll.close();
+    return true;
+  }
+
+  /** First microsleep: ask the driver to answer. Any utterance before the listen window ends (plus a grace) counts. */
+  function onUrgentCheckIn(ev: Evaluation) {
+    if (urgentCheck) return;
+    urgentCheck = { dominant: ev.dominant, score: ev.score, timer: null };
+    console.log(`[check-in] microsleep: asking ${d()} to answer`);
+    driverQueue.enqueue({
+      text: urgentCheckInLine(d()),
+      tier: 85,
+      context: "checkin",
+      listenAfterMs: LISTEN_MS,
+      priority: true,
+      onDone: () => {
+        if (urgentCheck) urgentCheck.timer = setTimeout(() => void noAnswer(), ANSWER_GRACE_MS);
+      },
+    });
+  }
+
+  /** Nobody answered the urgent check-in: sound the alarm, then the usual 85 flow (urgent line, guardians, roast). */
+  async function noAnswer() {
+    const c = urgentCheck;
+    if (!c) return;
+    urgentCheck = null;
+    console.log("[check-in] no answer: alarm");
+    sendToPhone({ type: "alarm" });
+    await onAlert(85, c.dominant, c.score, { bumped: true, notify: trip.sharingMode === "never" ? "ask" : "notify" });
+  }
+
+  function clearUrgentCheck() {
+    if (urgentCheck?.timer) clearTimeout(urgentCheck.timer);
+    urgentCheck = null;
   }
 
   async function escalate(dominant: Dominant) {
@@ -329,6 +407,14 @@ export function createOrchestrator(store: TripStore, restStops = new RestStopFin
   async function onUtterance(text: string, context: string) {
     const intent = parseDriverUtterance(text, context);
     console.log(`[driver] "${text}" (${context}) -> ${intent.kind}`);
+
+    // Any answer to the urgent check-in shows the driver is awake: no alarm. Only a "tell …" goes on to the chat.
+    if (urgentCheck) {
+      clearUrgentCheck();
+      console.log("[check-in] driver answered");
+      driverQueue.enqueue({ text: ackLine("awake"), context: "info", priority: true });
+      if (intent.kind !== "reply") return;
+    }
 
     if (pendingPermission && (context === "permission" || intent.kind === "yes" || intent.kind === "no")) {
       const { dominant } = pendingPermission;
@@ -382,7 +468,10 @@ export function createOrchestrator(store: TripStore, restStops = new RestStopFin
 
   // ---- chat -> backend -----------------------------------------------------
 
-  async function onChat({ contact, message, space, text, isGroup }: Inbound) {
+  async function onChat(inbound: Inbound) {
+    // Poll votes never reach the classifier; other reactions are ignored.
+    if (takeVote(inbound) || inbound.reactionTo) return;
+    const { contact, message, space, text, isGroup } = inbound;
     const c = await classify({ text, senderName: contact.name, isGroup, roastActive: roast.active });
     console.log(`[chat] ${contact.name} (${contact.role}): "${text}" -> ${c.kind}`);
 

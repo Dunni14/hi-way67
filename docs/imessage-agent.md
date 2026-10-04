@@ -117,6 +117,20 @@ With no yawns or nods: "Alex is getting dangerously drowsy". The speed is omitte
 
 Only a **drowsy** 85 starts a roast. A **reckless** 85 alerts guardians and nothing more.
 
+## Wake-up sound poll
+
+Before things get as far as a roast, the group picks a sound to wake the driver up. State in [`soundPoll.ts`](../backend/src/agent/soundPoll.ts), wired in `orchestrator.ts`.
+
+- **Opens** on an engine evaluation with `dominant: "drowsy"` at tier 1 or 2 (the 40 nudge or 70 warning), when sharing is not `never`, no roast and no poll is running, and no poll started in the last 5 minutes. The tiers are `POLL_TIERS` in `soundPoll.ts`.
+- **Posts** with `post()` (DMs if there is no group): `😴 Alex is getting sleepy. Pick their wake-up sound (25s): reply 1 🐓 Rooster · 2 📯 Air horn · 3 🐐 Goat scream`. The ids of the sent messages are kept so reactions to them count.
+- **Votes:** a message from an allowlisted contact that is just `1`, `2`, `3` or one of the emoji, or that emoji as a reaction to the poll message. Votes never reach the classifier. One vote per contact; the latest replaces the earlier one. Other reactions are ignored.
+- **Closes** after 25 s, or as soon as every allowlisted contact has voted. Most votes wins, a tie is broken at random among the tied, no votes means the air horn. The group gets `🐓 Rooster wins (2 votes). Playing now.` and the phone gets `play_sound`.
+- **Escalation wins:** a tier 3 evaluation cancels an open poll silently; the 85 flow (guardian alert, roast) runs as usual. A trip ending also cancels it.
+
+The sounds are listed in [`backend/src/agent/sounds.json`](../backend/src/agent/sounds.json): `id`, `emoji` and `title` per sound (list order is the vote number, up to 9) and the `default` played when nobody votes. It is checked at startup. The phone plays `res/raw/<id>.mp3`, so each id must match a file there (lowercase letters, digits, `_`). Reactions only arrive from Telegram if the bot receives `message_reaction` updates (and in groups only when the bot is an admin), so text replies are the reliable way to vote.
+
+Without Spectrum (`NO_SPECTRUM=1`), `POST /dev/chat` stands in for the group chat; `npm run fake-phone -- --poll` uses it to run the whole poll.
+
 ## Sharing modes
 
 | Event | `always` | `high_only` | `never` |

@@ -67,8 +67,10 @@ export type Levels = Record<Factor, number>;
 export type WeightMults = Record<Factor, number>;
 
 export type Tier = 0 | 1 | 2 | 3;
-export type Action = "none" | "voice_nudge" | "voice_warning" | "voice_urgent" | "notify_contacts" | "ask_permission_to_notify";
-export type Override = "microsleep" | "drowsy_sustained_3" | "drowsy_sustained_12" | "tier2_sustained_12";
+// check_in_urgent: a first microsleep. The backend asks the driver to answer and only sounds the alarm
+// (and notifies) when nobody answers; see orchestrator.ts.
+export type Action = "none" | "voice_nudge" | "voice_warning" | "voice_urgent" | "check_in_urgent" | "notify_contacts" | "ask_permission_to_notify";
+export type Override = "microsleep" | "microsleep_repeat" | "drowsy_onset" | "drowsy_sustained_3" | "drowsy_sustained_12" | "tier2_sustained_12";
 export type SharingMode = "always" | "high_only" | "never";
 
 export type Evaluation = {

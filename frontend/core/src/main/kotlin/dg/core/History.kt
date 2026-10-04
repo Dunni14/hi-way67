@@ -117,6 +117,7 @@ object History {
         val names = mapOf(
             "microsleep" to "Eyes closed too long", "drowsy_sustained_3" to "Drowsy for 30 s",
             "drowsy_sustained_12" to "Drowsy for 2 min", "tier2_sustained_12" to "Warning ignored",
+            "drowsy_onset" to "Getting drowsy", "microsleep_repeat" to "Eyes closed again",
         )
         return card.metrics.overrides.mapNotNull { (k, v) -> v.toInt().takeIf { it > 0 }?.let { (names[k] ?: k) to it } }
     }

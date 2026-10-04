@@ -18,6 +18,10 @@ export type EngineState = {
   /** Raw score tier of the previous scored window (for the 2-window hold). */
   prevRawTier: Tier;
   drowsyStreak: number;
+  /** Drowsy level of the last few scored windows, newest last (for the "n of the last m" rules). */
+  recentDrowsy: number[];
+  /** Window time (epoch ms) of the last microsleep; a second one soon after alarms without a check-in. */
+  lastMicrosleepMs: number | null;
   tier2Streak: number;
   faceHiddenStreak: number;
   /** Epoch ms of the last voice action per tier. */
@@ -32,6 +36,8 @@ export const initialState = (): EngineState => ({
   baselineAcc: [],
   prevRawTier: 0,
   drowsyStreak: 0,
+  recentDrowsy: [],
+  lastMicrosleepMs: null,
   tier2Streak: 0,
   faceHiddenStreak: 0,
   lastVoiceMs: {},
@@ -86,12 +92,26 @@ export function processWindow(
   let override: Override | null = null;
   const O = cfg.overrides;
   s.drowsyStreak = levels.drowsy >= O.drowsyLevel ? s.drowsyStreak + 1 : 0;
+  // "n of the last m" rules tolerate the window-to-window swing of live face signals.
+  const keep = Math.max(O.drowsyNudgeOf[1], O.drowsyFloorOf);
+  s.recentDrowsy = [...(s.recentDrowsy ?? []), levels.drowsy].slice(-keep);
+  const atLeast = (level: number, of: number) => s.recentDrowsy.slice(-of).filter((d) => d >= level).length;
   const microsleep = (w.longest_eye_closure_s ?? 0) >= O.microsleepS && !degraded;
+  // A first microsleep is a check-in (the driver gets a few seconds to answer); another within
+  // microsleepRepeatS alarms straight away.
+  let checkIn = false;
   if (microsleep) {
+    const repeat = s.lastMicrosleepMs != null && nowMs - s.lastMicrosleepMs < O.microsleepRepeatS * 1000;
     tier = 3;
-    override = "microsleep";
+    override = repeat ? "microsleep_repeat" : "microsleep";
+    checkIn = !repeat;
+    s.lastMicrosleepMs = nowMs;
   } else {
-    if (s.drowsyStreak >= O.drowsyFloorWindows && tier < 2) {
+    if (atLeast(O.drowsyNudgeLevel, O.drowsyNudgeOf[1]) >= O.drowsyNudgeOf[0] && tier < 1) {
+      tier = 1;
+      override = "drowsy_onset";
+    }
+    if (atLeast(O.drowsyLevel, O.drowsyFloorOf) >= O.drowsyFloorWindows && tier < 2) {
       tier = 2;
       override = "drowsy_sustained_3";
     }
@@ -110,7 +130,14 @@ export function processWindow(
   // Kids in the car raise any active tier by one.
   if (ctx.kidsInCar && tier >= 1) tier = Math.min(3, tier + 1) as Tier;
 
-  const actions = actionsFor(tier, s, nowMs, ctx, cfg, { score: sc.score, override, threshold: notifyThreshold });
+  // While a microsleep check-in is open, it owns escalation: the backend alarms if the driver doesn't answer,
+  // and a repeat microsleep alarms at once. Other tier 3 rules (drowsy_sustained_12, …) stay tier 3 but quiet.
+  const checkInOpen = !microsleep && s.lastMicrosleepMs != null && nowMs - s.lastMicrosleepMs < O.microsleepRepeatS * 1000;
+  const actions: Action[] = checkIn
+    ? ["check_in_urgent"]
+    : checkInOpen && tier === 3
+      ? ["none"]
+      : actionsFor(tier, s, nowMs, ctx, cfg, { score: sc.score, override, threshold: notifyThreshold });
   return {
     evaluation: { score: round1(sc.score), tier, dominant: sc.dominant, actions, levels, override, degraded },
     state: s,

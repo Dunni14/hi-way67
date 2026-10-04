@@ -1,0 +1,8 @@
+{
+  "default": "airhorn",
+  "sounds": [
+    { "id": "fah", "emoji": "🗣️", "title": "FAHHHHH" },
+    { "id": "airhorn", "emoji": "📯", "title": "Air horn" },
+    { "id": "goat", "emoji": "🐐", "title": "Goat scream" }
+  ]
+}

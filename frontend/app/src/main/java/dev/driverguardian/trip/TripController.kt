@@ -87,6 +87,7 @@ data class ContactsState(
 class TripController(app: Application) : AndroidViewModel(app) {
     private val store = SettingsStore(app)
     private val alarm = AlarmPlayer(app)
+    private val wakeSound = dev.driverguardian.alarm.SoundPlayer(app)
     private val voice = VoicePlayer(app) { client.send(it) }
     private var settings = AppSettings()
     private var tripJob: Job? = null
@@ -280,6 +281,8 @@ class TripController(app: Application) : AndroidViewModel(app) {
                 is BackendFrame.Speak -> voice.play(f)
                 is BackendFrame.Report -> _sharedReport.value = f
                 is BackendFrame.Navigate -> onNavigate(f.query)
+                is BackendFrame.PlaySound -> wakeSound.play(f.id)
+                is BackendFrame.Alarm -> { alarm.play(); _ui.value = _ui.value.copy(alarmOn = true) }
                 is BackendFrame.Error -> { android.util.Log.w("Backend", f.message); onContactsFrame(f) }
                 is BackendFrame.Contacts, is BackendFrame.ContactInvite, is BackendFrame.ContactJoined -> onContactsFrame(f)
                 else -> {}

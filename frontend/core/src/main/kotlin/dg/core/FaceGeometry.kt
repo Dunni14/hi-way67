@@ -94,6 +94,7 @@ class FaceSampler(private val yawns: YawnDetector = YawnDetector()) {
     private var earMin: Double? = null
     private var yawned = false
     private var closedSinceMs: Long? = null // start of the current eyes-closed run
+    private var prevSampleMs: Long? = null
     private var periodClosedMs = 0L
 
     /** Feed one sample. Returns false if it was a duplicate. */
@@ -105,6 +106,11 @@ class FaceSampler(private val yawns: YawnDetector = YawnDetector()) {
         val tMs = ts / (unitsPerMs ?: 1000L)
         val ear = FaceGeometry.eyeOpenness(points)
         val mar = FaceGeometry.mouthOpenness(points)
+        // A closed run only spans frames we actually saw: a frame without a full mesh, or a gap in the
+        // frames (dropped, face lost), ends it. Otherwise two closed frames seconds apart look like a microsleep.
+        val gap = prevSampleMs?.let { tMs - it } ?: 0L
+        prevSampleMs = tMs
+        if (ear == null || gap > MAX_GAP_MS) closedSinceMs = null
         if (ear != null) {
             val closure = FaceGeometry.eyeClosure(ear)
             closureSum += closure; closureN++; earSum += ear; earMin = minOf(earMin ?: ear, ear)
@@ -132,6 +138,9 @@ class FaceSampler(private val yawns: YawnDetector = YawnDetector()) {
     private companion object {
         /** Eye closure (0..1) at or above this counts as "eyes closed" for continuous-closure runs. */
         const val CLOSED = 0.7
+
+        /** Frames are 15-66 ms apart; a longer gap means frames were missed, so a closed run can't be trusted across it. */
+        const val MAX_GAP_MS = 250L
     }
 
     /** Camera frames are 15-60 ms apart; pick the unit that makes the gap land there. */

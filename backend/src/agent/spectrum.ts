@@ -13,7 +13,8 @@ import { redeemInvite } from "./invites.ts";
 import { trip } from "../trip/state.ts";
 import { sendToPhone } from "../ws/server.ts";
 
-export type Inbound = { contact: Contact; space: Space; message: Message; text: string; isGroup: boolean };
+/** `reactionTo`: set for an emoji reaction (`text` is the emoji); the id of the message it reacts to. */
+export type Inbound = { contact: Contact; space: Space; message: Message; text: string; isGroup: boolean; reactionTo?: string };
 
 let app: Awaited<ReturnType<typeof Spectrum>> | null = null;
 let groupSpace: Space | null = null;
@@ -149,6 +150,11 @@ async function route(space: Space, message: Message, onMessage: (m: Inbound) => 
   }
   if (!isGroup) dmSpaces.set(contact.handle, space);
 
+  // Reactions only matter as sound poll votes (Telegram delivers them only if the bot gets message_reaction updates).
+  if (message.content.type === "reaction") {
+    await onMessage({ contact, space, message, text: message.content.emoji, isGroup, reactionTo: message.content.target.id });
+    return;
+  }
   const body = describeContent(message, contact.name);
   if (!body) return;
   await onMessage({ contact, space, message, text: body, isGroup });
@@ -158,9 +164,12 @@ type Content = Parameters<Space["send"]>[0];
 /** Builds the content per recipient: an attachment builder should not be shared between sends. */
 type MakeContent = () => Content;
 
-/** Post to the family group (or every known DM as fallback). `minRole` limits who receives it. */
-export async function post(text: string, minRole: Role = "friend") {
-  await deliver(() => text, minRole, text);
+/**
+ * Post to the family group (or every known DM as fallback). `minRole` limits who receives it.
+ * Returns the ids of the messages sent (empty if the platform returned none), e.g. to match reactions.
+ */
+export async function post(text: string, minRole: Role = "friend"): Promise<string[]> {
+  return deliver(() => text, minRole, text);
 }
 
 /** Same routing as `post`, with a PNG attachment. */
@@ -168,19 +177,19 @@ export async function postImage(png: Buffer, minRole: Role = "friend", name = "d
   await deliver(() => attachment(png, { name, mimeType: "image/png" }), minRole, `[image ${name}]`);
 }
 
-async function deliver(make: MakeContent, minRole: Role, label: string) {
-  if (groupSpace && minRole === "friend") {
-    await groupSpace.send(make());
-    return;
-  }
+async function deliver(make: MakeContent, minRole: Role, label: string): Promise<string[]> {
+  const ids = (m: { id?: string } | undefined) => (m?.id ? [m.id] : []);
+  if (groupSpace && minRole === "friend") return ids(await groupSpace.send(make()));
   const targets = allContacts().filter((c) => minRole === "friend" || c.role === "guardian");
   if (targets.length === 0) {
     // Dev mode (no contacts.json): best we can do is the group.
-    if (groupSpace) await groupSpace.send(make());
-    else console.warn(`[spectrum] no group chat or contacts yet, not posted: ${label}`);
-    return;
+    if (groupSpace) return ids(await groupSpace.send(make()));
+    console.warn(`[spectrum] no group chat or contacts yet, not posted: ${label}`);
+    return [];
   }
-  for (const c of targets) await dmContent(c.handle, make);
+  const sent: string[] = [];
+  for (const c of targets) sent.push(...ids(await dmContent(c.handle, make)));
+  return sent;
 }
 
 /**
@@ -205,11 +214,12 @@ async function dmContent(handle: string, make: MakeContent) {
     }
     if (!space) {
       console.warn(`[spectrum] can't DM ${contact?.name ?? handle} on telegram until they message the bot privately once`);
-      return;
+      return undefined;
     }
-    await space.send(make());
+    return await space.send(make());
   } catch (err) {
     console.error(`[spectrum] DM to ${handle} failed:`, err);
+    return undefined;
   }
 }
 

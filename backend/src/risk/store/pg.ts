@@ -21,7 +21,8 @@ const sharingToDb = (m: SharingMode | null | undefined) => (m === "high_only" ? 
 const sharingFromDb = (m: string): SharingMode => (m === "high_risk_only" ? "high_only" : (m as SharingMode));
 
 // events.override stores override_rules.rule_id (seeded in sql/02_seed.sql).
-const OVERRIDE_IDS: Record<Override, number> = { microsleep: 1, drowsy_sustained_3: 2, drowsy_sustained_12: 3, tier2_sustained_12: 4 };
+// 5 is the kids-in-car rule, which is not an Override.
+const OVERRIDE_IDS: Record<Override, number> = { microsleep: 1, drowsy_sustained_3: 2, drowsy_sustained_12: 3, tier2_sustained_12: 4, drowsy_onset: 6, microsleep_repeat: 7 };
 const overrideFromId = (id: number | null): Override | null =>
   id == null ? null : ((Object.keys(OVERRIDE_IDS) as Override[]).find((k) => OVERRIDE_IDS[k] === id) ?? null);
 

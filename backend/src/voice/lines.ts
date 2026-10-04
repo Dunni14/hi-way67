@@ -111,8 +111,18 @@ export function roastLine(from: string, body: string): string {
   return `${from} says: ${body}`;
 }
 
-export function ackLine(kind: "dismissed" | "navigating" | "sent" | "notified" | "not_notified"): string {
+/** After a first microsleep: the driver has a few seconds to answer before the alarm. */
+export function urgentCheckInLine(driver: string): string {
+  return pick([
+    `${driver}! Your eyes just closed for a couple of seconds. Are you with me? Say something.`,
+    `${driver}, your eyes closed for a moment there. Talk to me. Are you awake?`,
+  ]);
+}
+
+export function ackLine(kind: "dismissed" | "navigating" | "sent" | "notified" | "not_notified" | "awake"): string {
   switch (kind) {
+    case "awake":
+      return "Good. Stay with me, and take a break soon.";
     case "dismissed":
       return "Okay. I'll back off for now.";
     case "navigating":

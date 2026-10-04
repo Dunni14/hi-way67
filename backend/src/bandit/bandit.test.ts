@@ -124,8 +124,11 @@ test("tier 3 is never learned: tree actions unchanged, no intervention", async (
   await drive(trip, {}, 5);
   const hit = await win(trip, 6, { longest_eye_closure_s: 2 });
   assert.equal(hit.tier, 3);
-  assert.ok(hit.actions.includes("voice_urgent"));
+  assert.deepEqual(hit.actions, ["check_in_urgent"]); // a first microsleep is a check-in
   assert.equal(hit.intervention, undefined);
+  const again = await win(trip, 7, { longest_eye_closure_s: 2 });
+  assert.ok(again.actions.includes("voice_urgent"));
+  assert.equal(again.intervention, undefined);
   assert.equal((await events("sleepy")).length, 0);
 });
 

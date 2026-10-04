@@ -170,6 +170,18 @@ The phone should:
 ```
 Open the maps app searching for `query`.
 
+### `alarm`
+```json
+{ "type": "alarm" }
+```
+Sound the alarm now. Sent when the driver didn't answer the urgent check-in after a first microsleep. (The phone still also alarms on an `evaluation` whose `actions` include `voice_urgent`; a first microsleep's evaluation has `check_in_urgent` instead.)
+
+### `play_sound`
+```json
+{ "type": "play_sound", "id": "goat" }
+```
+The group chat's wake-up sound poll picked this sound (an `id` from `backend/src/agent/sounds.json`, e.g. `rooster`). Play the bundled `res/raw/<id>` right away, without a spoken warning, then carry on normally. No reply. See [imessage-agent.md](imessage-agent.md#wake-up-sound-poll).
+
 ### `dismissed`
 ```json
 { "type": "dismissed", "factor": "drowsy", "multiplier": 0.95 }

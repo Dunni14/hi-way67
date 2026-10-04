@@ -160,7 +160,7 @@ export function buildCard(windows: CardWindow[], observations: Observation[], ct
   const p90Risk = percentile(risks, 0.9);
   const tier2Frac = n ? scored.filter((w) => w.tier >= 2).length / n : 0;
   const tier3Frac = n ? scored.filter((w) => w.tier === 3).length / n : 0;
-  const microsleeps = scored.filter((w) => w.result.override === "microsleep").length;
+  const microsleeps = scored.filter((w) => w.result.override === "microsleep" || w.result.override === "microsleep_repeat").length;
 
   const P = R.penalty;
   const penalty = P.meanRisk * meanRisk + P.p90Risk * p90Risk + P.tier2Frac * tier2Frac + P.tier3Frac * tier3Frac + P.microsleep * Math.min(microsleeps, P.microsleepCap);

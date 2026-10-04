@@ -28,6 +28,7 @@ npm run start
 | `npm run dev` | Same, restarting on file changes |
 | `npm run fake-phone` | Connect as a fake phone and run the scripted demo (see below) |
 | `npm run fake-phone -- -i` | Interactive fake phone |
+| `npm run fake-phone -- --poll` | With the backend on `NO_SPECTRUM=1`: drowsy windows until the sound poll opens, votes `1`, `🐐` and a 🐐 reaction through `POST /dev/chat`, waits for `play_sound` |
 | `npm run fake-phone -- --contacts` | Send `contacts_list`, `contact_add` (Telegram, then iMessage) and `contacts_list` again, print the replies, exit |
 | `npm run smoke:tts` | Write `out/tts-{0,40,70,85}.mp3`, one per voice tier |
 | `npm run typecheck` | `tsc --noEmit` |
@@ -120,7 +121,8 @@ Interactive mode (`-i`) commands:
 ```
 start | end | win <calm|drowsy|micro|angry> [count] | say <text> [as <context>]
 share <always|high_only|never> | kids <on|off>
-contacts | add <telegram|imessage> <name> [guardian|friend] [phone] | rm <handle> | quit
+contacts | add <telegram|imessage> <name> [guardian|friend] [phone] | rm <handle> | role <handle> <guardian|friend>
+vote <handle> <1|2|3|emoji> [react] | quit
 ```
 
 The fake phone acks every `speak` with `speak_done` after 500 ms and saves its audio to `out/`. `say` without `as` reuses the context of the last `speak` that asked to listen.

@@ -145,4 +145,8 @@ export type BackendMsg =
       distance_mi: number;
       image: string; // base64 PNG of the report card ("" if rendering failed)
     }
+  // Sound poll winner: play the bundled res/raw/<id> sound now. No reply needed.
+  | { type: "play_sound"; id: string } // a sound id from src/agent/sounds.json
+  // No answer to the urgent check-in after a first microsleep: sound the alarm now.
+  | { type: "alarm" }
   | { type: "error"; message: string };

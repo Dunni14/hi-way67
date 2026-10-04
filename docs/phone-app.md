@@ -47,6 +47,7 @@ There is no networking (the `INTERNET` permission is only used by Presage), scor
 | 14 | Settings: sharing mode, kids in car | Not started |
 | 15 | Pre-trip check screen (stretch) | Not started |
 | 16 | Bundled alarm audio for the alarm stage | Not started |
+| 16b | `play_sound` → play `res/raw/<id>.mp3` (`rooster`, `airhorn`, `goat`) once, then continue normally; no reply | Built in `frontend/` (`alarm/SoundPlayer.kt`). Falls back to `res/raw/alarm.wav` until the three sound files are added |
 | 17 | Report card screen (stretch) | Not started |
 
 ## Feature vector (from the root README)
