@@ -33,8 +33,8 @@ vs the fixed demo limit, a rounded card with the driver camera (the design shows
 speech (Presage talking / mic listening). Tiles use the design's three states: green value, blue value, red tile.
 The design's second tile is "Distraction"; the app shows drowsiness there because gaze is not measured, and that
 tile has no icon in the design yet, so it uses a Material moon. The avatar on the status pill shows the driver's initial;
-its ring is the backend connection (green, yellow, red). Icons in `app/src/main/res/drawable/` are exported from the Figma file. Stats shows the last report card; Contacts is a placeholder (contacts live in the
-backend's `contacts.json`); Settings links to the Debug screen.
+its ring is the backend connection (green, yellow, red). Icons in `app/src/main/res/drawable/` are exported from the Figma file. Stats shows the last report card; Contacts lists the backend allowlist (guardian switch, Telegram invite links,
+"Create group" for the family chat); Settings links to the Debug screen.
 
 Visual style: the mockups are in [`docs/design/figma/`](../docs/design/figma/README.md). Colors, type styles and the shared
 white card (`Modifier.card()`: soft blue shadow, hairline edge) live in `ui/Theme.kt`; every screen except Debug uses them.

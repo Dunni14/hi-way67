@@ -28,7 +28,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import dev.driverguardian.trip.TripController
 import dev.driverguardian.ui.DashcamScreen
 import dev.driverguardian.ui.DriverGuardianColors
-import dev.driverguardian.ui.PlaceholderScreen
+import dev.driverguardian.ui.ContactsScreen
 import dev.driverguardian.ui.TabBar
 import dev.driverguardian.ui.StatsDashboard
 import dev.driverguardian.ui.DebugScreen
@@ -80,6 +80,7 @@ class MainActivity : ComponentActivity() {
         val voice by vm.voiceState.collectAsState()
         val settings by vm.settingsFlow.collectAsState()
         val report by vm.report.collectAsState()
+        val contacts by vm.contacts.collectAsState()
         val parked = !ui.running || ui.speedMph < 3
         // Jump to the report card when a trip ends; "Done" goes on to the trip history.
         var reportOpen by remember { mutableStateOf(false) }
@@ -99,10 +100,10 @@ class MainActivity : ComponentActivity() {
                             onOpenLastReport = if (card != null) ({ reportOpen = true }) else null,
                         )
                     }
-                    "contacts" -> PlaceholderScreen(
-                        "Contacts",
-                        "Who gets alerts is set on the backend for now: contacts.json lists guardians (alerts and location) " +
-                            "and friends (messages and roasts, no location). How much you share is under Settings.",
+                    "contacts" -> ContactsScreen(
+                        state = contacts, conn = conn,
+                        onRefresh = vm::refreshContacts, onAdd = vm::addContact, onRemove = vm::removeContact,
+                        onGuardian = vm::setGuardian, onCloseInvite = vm::clearInvite, onJoinedSeen = vm::clearJoined,
                     )
                     "settings" -> if (showDebug) DebugScreen(ui, vm.client, conn) { showDebug = false }
                         else SettingsScreen(settings, onSave = vm::saveSettings, onDebug = { showDebug = true })
@@ -110,6 +111,7 @@ class MainActivity : ComponentActivity() {
                         ui = ui, conn = conn, voice = voice,
                         onStart = vm::startTrip, onEnd = vm::endTrip,
                         liveSensing = !settings.demoMode,
+                        driverName = settings.driverName,
                     )
                 }
             }
