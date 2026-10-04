@@ -26,11 +26,13 @@ export const PhoneMsg = z.discriminatedUnion("type", [
     driverName: z.string().optional(),
     sharingMode: SharingMode.default("high_only"),
     kidsInCar: z.boolean().default(false),
+    lowExperience: z.boolean().default(false),
   }),
   z.object({
     type: z.literal("settings"),
     sharingMode: SharingMode.optional(),
     kidsInCar: z.boolean().optional(),
+    lowExperience: z.boolean().optional(),
   }),
   z.object({ type: z.literal("trip_start") }),
   z.object({ type: z.literal("trip_end") }),
@@ -45,6 +47,33 @@ export const PhoneMsg = z.discriminatedUnion("type", [
     lon: z.number().optional(),
     events: z.array(DriverEvent).default([]),
     features: z.record(z.string(), z.number()).optional(),
+  }),
+  // Raw material for the backend risk model (src/risk). Send either normalized
+  // `features` (0..1, keys per risk/features.ts) or `raw` Presage/sensor readings.
+  // The backend scores it, runs the decision tree and fires alerts itself.
+  z.object({
+    type: z.literal("feature_window"),
+    ts: z.number(),
+    features: z.record(z.string(), z.number()).optional(),
+    raw: z
+      .object({
+        breathingRate: z.number().optional(),
+        heartRate: z.number().optional(),
+        engagement: z.number().optional(),
+        eyeClosure: z.number().optional(),
+        stress: z.number().optional(),
+        hardBrakes: z.number().optional(),
+        swerves: z.number().optional(),
+        speedMph: z.number().optional(),
+        speedLimitMph: z.number().optional(),
+        hoursDriving: z.number().optional(),
+        hourOfDay: z.number().optional(),
+      })
+      .optional(),
+    speed: z.number().default(0),
+    lat: z.number().optional(),
+    lon: z.number().optional(),
+    events: z.array(DriverEvent).default([]),
   }),
   z.object({
     type: z.literal("alert"),

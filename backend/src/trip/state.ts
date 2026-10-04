@@ -20,6 +20,7 @@ export class TripState {
   driverName = config.driverName;
   sharingMode: SharingMode = "high_only";
   kidsInCar = false;
+  lowExperience = false;
 
   tripId: string | null = null;
   startedAt = 0;
