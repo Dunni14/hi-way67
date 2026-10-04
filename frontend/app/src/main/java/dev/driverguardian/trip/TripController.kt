@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import dev.driverguardian.alarm.AlarmPlayer
 import dev.driverguardian.data.AppSettings
 import dev.driverguardian.data.SettingsStore
+import dev.driverguardian.data.TripHistoryStore
 import dev.driverguardian.net.BackendClient
 import dev.driverguardian.net.Conn
 import dev.driverguardian.sensing.FakePresageSource
@@ -20,7 +21,9 @@ import dg.core.PhoneFrame
 import dg.core.RealClock
 import dg.core.ReportCard
 import dg.core.TripClock
+import dg.core.TripHistory
 import dg.core.TripSample
+import dg.core.TripSummary
 import dg.core.WindowAggregator
 import dg.core.WindowSignals
 import kotlinx.coroutines.Job
@@ -96,6 +99,12 @@ class TripController(app: Application) : AndroidViewModel(app) {
     private val _report = MutableStateFlow<ReportCard?>(null)
     val report: StateFlow<ReportCard?> = _report
 
+    // Finished trips, newest first, kept on the phone for the Stats tab.
+    private val historyStore = TripHistoryStore(app)
+    private val _history = MutableStateFlow<List<TripSummary>>(emptyList())
+    val history: StateFlow<List<TripSummary>> = _history
+    private var tripDemo = false
+
     /** Pacing of the current trip: [DemoClock] in demo mode, else real time. */
     private var clock: TripClock = RealClock
     private var tripStartMs = 0L
@@ -106,6 +115,7 @@ class TripController(app: Application) : AndroidViewModel(app) {
             _settings.value = settings
             client.connect(settings.host)
         }
+        viewModelScope.launch { _history.value = historyStore.load() }
     }
 
     fun saveSettings(s: AppSettings) {
@@ -128,6 +138,7 @@ class TripController(app: Application) : AndroidViewModel(app) {
         val start = System.currentTimeMillis()
         tripStartMs = start
         val demo = settings.demoMode
+        tripDemo = demo
         // Demo mode sends windows faster (DemoClock: one per 10 script seconds) but stamps them in real
         // time, so the engine's window-counted holds speed up while its cooldowns stay real.
         val c: TripClock = if (demo) DemoClock else RealClock
@@ -189,7 +200,15 @@ class TripController(app: Application) : AndroidViewModel(app) {
         motion?.stop(); motion = null
         alarm.stop()
         client.send(PhoneFrame.TripEnd)
-        if (wasRunning) _report.value = ReportCard.build(samples.toList())
+        if (wasRunning) {
+            val card = ReportCard.build(samples.toList())
+            _report.value = card
+            if (card != null) {
+                val updated = TripHistory.add(_history.value, TripSummary.of(card, System.currentTimeMillis(), tripDemo))
+                _history.value = updated
+                viewModelScope.launch { historyStore.save(updated) }
+            }
+        }
         _ui.value = _ui.value.copy(running = false, calibrating = false, alarmOn = false)
     }
 

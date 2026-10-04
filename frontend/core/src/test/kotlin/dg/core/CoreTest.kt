@@ -9,6 +9,18 @@ class CoreTest {
 
     @Test fun reportCardEmpty() = assertNull(ReportCard.build(emptyList()))
 
+    @Test fun tripHistoryKeepsNewestFirstAndSurvivesBadData() {
+        fun trip(n: Long) = TripSummary(endedAtMs = n, durationMin = 5, grade = "B", avgRisk = 20.0, peakRisk = 45.5, alerts = 1, demo = n % 2 == 0L)
+        var h = emptyList<TripSummary>()
+        for (n in 1L..(TripHistory.MAX_TRIPS + 5)) h = TripHistory.add(h, trip(n))
+        assertEquals(TripHistory.MAX_TRIPS, h.size)
+        assertEquals(TripHistory.MAX_TRIPS + 5L, h.first().endedAtMs) // newest first
+        assertEquals(6L, h.last().endedAtMs) // oldest five dropped
+        assertEquals(h, TripHistory.decode(TripHistory.encode(h)))
+        assertEquals(emptyList(), TripHistory.decode(null))
+        assertEquals(emptyList(), TripHistory.decode("not json"))
+    }
+
     @Test fun reportCardCalmTripGetsA() {
         val c = ReportCard.build(List(31) { sample(it, 5.0) })!!
         assertEquals("A", c.grade)
