@@ -6,7 +6,7 @@ import type { PhoneMsg, Tier, Dominant } from "./ws/protocol.ts";
 import { sendToPhone } from "./ws/server.ts";
 import { driverQueue } from "./voice/driverQueue.ts";
 import { ackLine, alertLine, ASKS_REST_STOP, gradeOf, interventionLine, messageLine, permissionLine, roastLine, speedingNudge } from "./voice/lines.ts";
-import { post, dm, hasGroup, type Inbound } from "./agent/spectrum.ts";
+import { post, dm, postImage, dmImage, hasGroup, type Inbound } from "./agent/spectrum.ts";
 import { classify, shortenForSpeech } from "./agent/classifier.ts";
 import { answerQuestion } from "./agent/answer.ts";
 import { parseDriverUtterance } from "./agent/driverIntent.ts";
@@ -15,6 +15,8 @@ import { allContacts, contactPlatform, removeContact, setContactRole } from "./a
 import { createInvite } from "./agent/invites.ts";
 import type { Evaluation } from "./risk/types.ts";
 import type { EvaluationExtra, RiskService } from "./risk/service.ts";
+import { renderReportImage } from "./report/image.ts";
+import { tripNarrative } from "./report/narrative.ts";
 import { RestStopFinder, milesAhead } from "./gps/restStop.ts";
 import { riskConfig } from "./risk/config.ts";
 import type { LocationFix } from "./gps/types.ts";
@@ -179,18 +181,37 @@ export function createOrchestrator(store: TripStore, restStops = new RestStopFin
     const summary = `🏁 ${d()} arrived safely. ${minutes} min drive, ${trip.alertCount} warning${trip.alertCount === 1 ? "" : "s"}, peak risk ${Math.round(trip.maxR)}/100.`;
     await store.endTrip(trip.tripId!, { endedAt: Date.now(), maxR: trip.maxR, alerts: trip.alertCount });
     const tripId = await engineTrip;
-    if (risk && tripId) await risk.endTrip(tripId).catch((err) => console.error("[risk] endTrip:", err));
+    const ended = risk && tripId ? await risk.endTrip(tripId).catch((err) => (console.error("[risk] endTrip:", err), null)) : null;
+    // The report card as an image plus a few plain sentences (no location in either). The phone always gets
+    // them; chats only when sharing is on. Any failure falls back to the text summary.
+    const narrative = ended ? tripNarrative(ended.card, d()) : null;
+    const report = ended
+      ? await renderReportImage(ended.card, { driverName: d(), startedAt: trip.startedAt }).catch((err) => (console.error("[report] image:", err), null))
+      : null;
+    if (ended && narrative) {
+      const k = ended.card;
+      sendToPhone({
+        type: "report", score: k.score, grade: k.grade, summary: narrative, avg_speed_mph: k.metrics.avg_speed_mph, top_speed_mph: k.metrics.max_speed_mph,
+        attention_score: k.categories.attention, duration_s: k.metrics.duration_s, distance_mi: k.metrics.distance_mi, image: report ? report.toString("base64") : "",
+      });
+    }
     engineTrip = null;
     trip.end();
     roast.resolve();
     driverQueue.clear();
     console.log(`[trip] ended: ${summary}`);
 
-    if (trip.sharingMode !== "never") await post(summary).catch(logPostError);
+    if (trip.sharingMode !== "never") {
+      if (report && narrative) {
+        // Image first, then the same few sentences as text so the chat preview says something.
+        await postImage(report).then(() => post(`🏁 ${narrative}`)).catch((err) => (logPostError(err), post(summary).catch(logPostError)));
+      } else await post(summary).catch(logPostError);
+    }
     // Contacts who asked "let me know when he arrives" get a direct ping too.
     for (const c of allContacts()) {
       if ((await store.getContactPrefs(c.handle)).notifyOnArrival) {
         await dm(c.handle, `You asked me to tell you: ${d()} arrived safely.`);
+        if (report && trip.sharingMode !== "never") await dmImage(c.handle, report);
         await store.setContactPrefs(c.handle, { notifyOnArrival: false });
       }
     }

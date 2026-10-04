@@ -6,6 +6,7 @@ import { riskConfig, type RiskConfig } from "./config.ts";
 import { initialState, processWindow, type EngineState } from "./decision.ts";
 import { buildCard, type ReportCard } from "./card.ts";
 import { observe } from "./expression.ts";
+import { renderReportImage } from "../report/image.ts";
 import { applyCard, applyFeedback, normalizeProfile, notifyThreshold } from "./profile.ts";
 import { defaultMults, dominantFactor } from "./score.ts";
 import { driverStats } from "./stats.ts";
@@ -265,6 +266,13 @@ export class RiskService {
     return (await this.store.getCard(tripId))?.card ?? (await this.buildTripCard(trip));
   }
 
+  /** The report card as a PNG (live before the trip ends, stored after). */
+  async cardImage(tripId: string): Promise<Buffer> {
+    const trip = await this.mustTrip(tripId);
+    const card = await this.card(tripId);
+    return renderReportImage(card, { driverName: trip.driverId, startedAt: trip.startedAt });
+  }
+
   async observations(tripId: string) {
     await this.mustTrip(tripId);
     return this.store.getObservations(tripId);
@@ -308,7 +316,12 @@ export class RiskService {
       trips.map(async (t) => {
         const card = (await this.store.getCard(t.id))?.card;
         const s = summaryOf(await this.store.getWindows(t.id), card);
-        return { trip_id: t.id, started_at: t.startedAt, ended_at: t.endedAt, max_score: s.max_score, grade: s.grade, card_score: card?.score ?? null, card_grade: card?.grade ?? null };
+        return {
+          trip_id: t.id, started_at: t.startedAt, ended_at: t.endedAt, max_score: s.max_score, grade: s.grade,
+          card_score: card?.score ?? null, card_grade: card?.grade ?? null,
+          avg_speed_mph: card?.metrics.avg_speed_mph ?? null, top_speed_mph: card?.metrics.max_speed_mph ?? null, attention_score: card?.categories.attention ?? null,
+          duration_s: card?.metrics.duration_s ?? null, distance_mi: card?.metrics.distance_mi ?? null,
+        };
       }),
     );
   }

@@ -25,12 +25,15 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import dev.driverguardian.net.Conn
 import dev.driverguardian.trip.TripController
 import dev.driverguardian.ui.DashcamScreen
 import dev.driverguardian.ui.DriverGuardianColors
 import dev.driverguardian.ui.ContactsScreen
 import dev.driverguardian.ui.TabBar
+import dev.driverguardian.ui.LocalTripHistoryScreen
 import dev.driverguardian.ui.StatsDashboard
+import dev.driverguardian.ui.TripRecapDialog
 import dev.driverguardian.ui.DebugScreen
 import dev.driverguardian.ui.ReportCardScreen
 import dev.driverguardian.ui.SettingsScreen
@@ -81,24 +84,24 @@ class MainActivity : ComponentActivity() {
         val settings by vm.settingsFlow.collectAsState()
         val report by vm.report.collectAsState()
         val contacts by vm.contacts.collectAsState()
+        val shared by vm.sharedReport.collectAsState()
+        val localHistory by vm.localHistory.collectAsState()
+        var showReport by remember { mutableStateOf(false) }
         val parked = !ui.running || ui.speedMph < 3
-        // Jump to the report card when a trip ends; "Done" goes on to the trip history.
-        var reportOpen by remember { mutableStateOf(false) }
-        LaunchedEffect(report) { if (report != null) { tab = "stats"; reportOpen = true } }
+        val recap by vm.recap.collectAsState()
         // Leaving the parked state always brings the driver back to the Drive tab.
         LaunchedEffect(parked) { if (!parked) { tab = "drive"; showDebug = false } }
 
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f)) {
                 when (tab) {
+                    // The report card of the trip that just ended (with what the backend shared, once it arrives); Done drops back to Stats.
+                    // Stats is the Tiger Data dashboard; without a backend connection, the trips kept on the phone.
                     "stats" -> {
-                        val card = report
-                        if (card != null && reportOpen) ReportCardScreen(card) { reportOpen = false }
-                        else StatsDashboard(
-                            api = vm.history,
-                            driverHint = settings.driverName,
-                            onOpenLastReport = if (card != null) ({ reportOpen = true }) else null,
-                        )
+                        val openLatest = if (report != null) ({ showReport = true }) else null
+                        report?.takeIf { showReport }?.let { ReportCardScreen(it, shared) { showReport = false } }
+                            ?: if (conn == Conn.CONNECTED) StatsDashboard(api = vm.history, driverHint = settings.driverName, onOpenLastReport = openLatest)
+                            else LocalTripHistoryScreen(localHistory, onOpenLatest = openLatest)
                     }
                     "contacts" -> ContactsScreen(
                         state = contacts, conn = conn,
@@ -116,6 +119,13 @@ class MainActivity : ComponentActivity() {
                 }
             }
             TabBar(selected = tab, parked = parked) { tab = it; showDebug = false }
+        }
+        // When a trip ends, a popup sums it up; the full report card is one tap away.
+        recap?.let { r ->
+            TripRecapDialog(
+                r, onDone = vm::dismissRecap,
+                onReport = if (report != null) ({ vm.dismissRecap(); tab = "stats"; showReport = true }) else null,
+            )
         }
     }
 }

@@ -8,11 +8,14 @@ import dev.driverguardian.sensing.PresagePreview
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,6 +34,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
@@ -42,6 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import dev.driverguardian.R
 import dev.driverguardian.data.AppSettings
@@ -51,7 +57,12 @@ import dev.driverguardian.trip.UiState
 import dev.driverguardian.voice.VoicePlayer
 import dg.core.SPEED_LIMIT_MPH
 import dg.core.SharingMode
+import dg.core.TripRecap
+import dg.core.TripSummary
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /** Why the risk engine raised the tier, in plain words. */
 private fun overrideText(o: String?) = when (o) {
@@ -431,6 +442,79 @@ private fun ToggleRow(title: String, detail: String, checked: Boolean, onChange:
     }
 }
 
+/** Popup shown when a trip ends: how fast and how alert the drive was. */
+@Composable
+fun TripRecapDialog(recap: TripRecap, onDone: () -> Unit, onReport: (() -> Unit)?) {
+    Dialog(onDismissRequest = onDone) {
+        Column(Modifier.fillMaxWidth().clip(CardShape).background(Surface).padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Trip summary", color = OnSurface, fontSize = 22.sp)
+            Text("${recap.durationMin} min", color = SystemText, style = Label)
+            RecapRow("Average speed", recap.avgSpeedMph?.let { "%.0f mph".format(it) } ?: "--", SystemText)
+            RecapRow("Top speed", recap.topSpeedMph?.let { "%.0f mph".format(it) } ?: "--", SystemText)
+            val alertColor = when (recap.alertnessLabel) { "GREAT" -> Good; "GOOD" -> Main; "LOW" -> Bad; else -> SystemText }
+            RecapRow("Alertness", recap.alertness?.let { "$it%  ${recap.alertnessLabel}" } ?: "Not scored", alertColor)
+            if (recap.alertness == null) Text("Alertness comes from the backend's scoring, which this trip did not get.", color = SystemText, style = Label)
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (onReport != null) OutlinedButton(onClick = onReport, modifier = Modifier.weight(1f), shape = CardShape) { Text("View report") }
+                Button(onClick = onDone, modifier = Modifier.weight(1f), shape = CardShape) { Text("Done") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecapRow(label: String, value: String, valueColor: Color) {
+    Row(
+        Modifier.fillMaxWidth().clip(CardShape).background(Color.White).padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, color = SystemText, style = Label, modifier = Modifier.weight(1f))
+        Text(value, color = valueColor, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+/** Stats tab while the backend is unreachable: trips kept on the phone, newest first. The latest one reopens its report card. */
+@Composable
+fun LocalTripHistoryScreen(history: List<TripSummary>, onOpenLatest: (() -> Unit)?) {
+    Column(Modifier.fillMaxSize().background(ScreenBg).statusBarsPadding().padding(horizontal = 15.dp).padding(top = 20.dp)) {
+        Text("Stats", color = OnSurface, fontSize = 22.sp, modifier = Modifier.padding(horizontal = 9.dp))
+        Text("Trip history", color = SystemText, style = Label, modifier = Modifier.padding(start = 9.dp, top = 12.dp, bottom = 8.dp))
+        if (history.isEmpty()) {
+            Text(
+                "No trips yet. Finish one on the Drive tab and it is listed here with its grade.",
+                color = SystemText, fontSize = 15.sp, modifier = Modifier.padding(horizontal = 9.dp),
+            )
+            return@Column
+        }
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
+            itemsIndexed(history) { i, trip -> TripRow(trip, onOpen = if (i == 0) onOpenLatest else null) }
+        }
+    }
+}
+
+@Composable
+private fun TripRow(t: TripSummary, onOpen: (() -> Unit)?) {
+    val date = remember(t.endedAtMs) { SimpleDateFormat("EEE d MMM, h:mm a", Locale.getDefault()).format(Date(t.endedAtMs)) }
+    Row(
+        Modifier.fillMaxWidth().clip(CardShape).background(Color.White)
+            .then(if (onOpen != null) Modifier.clickable(onClick = onOpen) else Modifier)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(t.grade, color = gradeColor(t.grade), fontSize = 36.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(44.dp))
+        Column(Modifier.weight(1f)) {
+            Text(date + if (t.demo) " · demo" else "", color = OnSurface, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+            val speeds = listOfNotNull(t.avgSpeedMph?.let { "avg %.0f mph".format(it) }, t.topSpeedMph?.let { "top %.0f mph".format(it) })
+            Text((listOf("${t.durationMin} min") + speeds).joinToString(" · "), color = SystemText, style = Label, maxLines = 1)
+            Text(
+                "avg risk %.0f · peak %.0f · ".format(t.avgRisk, t.peakRisk) + if (t.alerts == 1) "1 alert" else "${t.alerts} alerts",
+                color = SystemText, style = Label, maxLines = 1,
+            )
+        }
+        if (onOpen != null) Text("Report", color = Main, style = Label)
+    }
+}
+
 private fun gradeColor(g: String) = when (g) {
     "A", "B" -> Good
     "C" -> Warn
@@ -438,32 +522,62 @@ private fun gradeColor(g: String) = when (g) {
     else -> Bad
 }
 
-/** Shown after "End trip", while parked. Everything comes from the windows the app held. */
+/**
+ * Shown after "End trip", while parked. [shared] is the report the backend generated and sent to friends and
+ * family (arrives a moment after the trip ends); [card] is the phone's own summary of the windows it held.
+ */
 @Composable
-fun ReportCardScreen(card: dg.core.ReportCard, onDone: () -> Unit) {
+fun ReportCardScreen(card: dg.core.ReportCard?, shared: dg.core.BackendFrame.Report?, onDone: () -> Unit) {
     Column(
         Modifier.fillMaxSize().background(ScreenBg).statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        val grade = shared?.grade ?: card?.grade
         Row(Modifier.fillMaxWidth().card().padding(18.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            val tint = gradeColor(card.grade)
-            Box(Modifier.size(96.dp).clip(CircleShape).background(tint.copy(alpha = 0.12f)).border(6.dp, tint, CircleShape), contentAlignment = Alignment.Center) {
-                Text(card.grade, color = tint, fontSize = 48.sp, fontWeight = FontWeight.Bold)
+            if (grade != null) {
+                val tint = gradeColor(grade)
+                Box(Modifier.size(96.dp).clip(CircleShape).background(tint.copy(alpha = 0.12f)).border(6.dp, tint, CircleShape), contentAlignment = Alignment.Center) {
+                    Text(grade, color = tint, fontSize = 48.sp, fontWeight = FontWeight.Bold)
+                }
             }
             Column {
                 Text("Trip report", style = SectionTitleStyle, fontSize = 22.sp)
-                Text("${card.durationMin} min", color = Muted, fontSize = 14.sp)
+                Text(
+                    if (shared != null) "Safety score ${shared.score.toInt()}/100 · shared with friends and family" else "Making the shared report…",
+                    color = Muted, fontSize = 14.sp,
+                )
+                card?.let { Text("${it.durationMin} min", color = Muted, fontSize = 14.sp) }
             }
         }
-        Text(card.advice, color = Ink, fontSize = 16.sp, lineHeight = 22.sp, modifier = Modifier.fillMaxWidth().card().padding(18.dp))
-        Column(Modifier.fillMaxWidth().card().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Risk over time", style = SectionTitleStyle, fontSize = 17.sp)
-            RiskChart(card.series, Modifier.fillMaxWidth().height(170.dp))
-            ReportFact("Average risk", "%.0f".format(card.avgRisk))
-            ReportFact("Peak risk", "%.0f".format(card.peakRisk))
-            ReportFact("Time at warning or worse", "%.0f%%".format(card.pctHighRisk))
-            ReportFact("Alerts", if (card.alertsByTier.isEmpty()) "none" else card.alertsByTier.entries.joinToString("  ") { "T${it.key}×${it.value}" })
-            if (card.eventCounts.isNotEmpty()) ReportFact("Events", card.eventCounts.entries.joinToString("  ") { "${it.key}×${it.value}" })
+        if (shared != null) {
+            Column(Modifier.fillMaxWidth().card().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (shared.summary.isNotBlank()) Text(shared.summary, color = Ink, fontSize = 16.sp, lineHeight = 22.sp)
+                ReportFact("Average speed", "%.0f mph".format(shared.avgSpeedMph))
+                ReportFact("Top speed", "%.0f mph".format(shared.topSpeedMph))
+                ReportFact("Attention", "%.0f/100".format(shared.attentionScore))
+                val bitmap = remember(shared.image) {
+                    if (shared.image.isEmpty()) null
+                    else runCatching {
+                        val bytes = android.util.Base64.decode(shared.image, android.util.Base64.DEFAULT)
+                        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                    }.getOrNull()
+                }
+                if (bitmap != null) {
+                    Image(bitmap, contentDescription = "Trip report card, as shared", modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.FillWidth)
+                }
+            }
+        }
+        if (card != null) {
+            if (shared == null) Text(card.advice, color = Ink, fontSize = 16.sp, lineHeight = 22.sp, modifier = Modifier.fillMaxWidth().card().padding(18.dp))
+            Column(Modifier.fillMaxWidth().card().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Risk over time", style = SectionTitleStyle, fontSize = 17.sp)
+                RiskChart(card.series, Modifier.fillMaxWidth().height(170.dp))
+                ReportFact("Average risk", "%.0f".format(card.avgRisk))
+                ReportFact("Peak risk", "%.0f".format(card.peakRisk))
+                ReportFact("Time at warning or worse", "%.0f%%".format(card.pctHighRisk))
+                ReportFact("Alerts", if (card.alertsByTier.isEmpty()) "none" else card.alertsByTier.entries.joinToString("  ") { "T${it.key}×${it.value}" })
+                if (card.eventCounts.isNotEmpty()) ReportFact("Events", card.eventCounts.entries.joinToString("  ") { "${it.key}×${it.value}" })
+            }
         }
         Button(
             onClick = onDone, modifier = Modifier.fillMaxWidth().height(52.dp), shape = CardShape,

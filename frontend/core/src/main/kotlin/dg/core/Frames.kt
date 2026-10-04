@@ -145,6 +145,21 @@ sealed interface BackendFrame {
         val actions: List<String>,
         val calibrating: Boolean,
     ) : BackendFrame
+    /**
+     * Sent once after `trip_end` when the engine scored the trip: the report the backend generated for friends and
+     * family. [image] is a base64 PNG, empty if rendering failed. [score] is a safety score, higher is better.
+     */
+    data class Report(
+        val score: Double,
+        val grade: String,
+        val summary: String,
+        val avgSpeedMph: Double,
+        val topSpeedMph: Double,
+        val attentionScore: Double,
+        val durationS: Int,
+        val distanceMi: Double,
+        val image: String,
+    ) : BackendFrame
     data class Navigate(val query: String) : BackendFrame
     data class Error(val message: String) : BackendFrame
     /** A line to say to the driver. [audio] is base64 mp3, empty if TTS failed (fall back to on-device TTS). */
@@ -205,6 +220,17 @@ fun decodeBackendFrame(text: String): BackendFrame {
         )
         "contact_invite" -> BackendFrame.ContactInvite(str("name") ?: "", str("code") ?: "", str("link") ?: "")
         "contact_joined" -> BackendFrame.ContactJoined(str("name") ?: "", str("role") ?: "friend")
+        "report" -> BackendFrame.Report(
+            score = num("score") ?: 0.0,
+            grade = str("grade") ?: "",
+            summary = str("summary") ?: "",
+            avgSpeedMph = num("avg_speed_mph") ?: 0.0,
+            topSpeedMph = num("top_speed_mph") ?: 0.0,
+            attentionScore = num("attention_score") ?: 0.0,
+            durationS = num("duration_s")?.toInt() ?: 0,
+            distanceMi = num("distance_mi") ?: 0.0,
+            image = str("image") ?: "",
+        )
         "navigate" -> BackendFrame.Navigate(str("query") ?: "rest stop")
         "error" -> BackendFrame.Error(str("message") ?: "")
         "speak" -> {

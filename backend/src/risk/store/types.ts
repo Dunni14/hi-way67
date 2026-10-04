@@ -23,7 +23,7 @@ export type WindowRow = { tripId: string; ts: string; raw: EngineWindow; result:
 
 export type EventRow = { tripId: string; ts: string; tier: Tier; actions: Action[]; override: Override | null };
 
-export type Scorecard = { scored_trips: number; avg_score: number | null; avg_score_30d: number | null; night_trips: number; distance_mi: number; duration_s: number; last_trip_at: string };
+export type Scorecard = { scored_trips: number; avg_score: number | null; avg_score_30d: number | null; night_trips: number; distance_mi: number; duration_s: number; last_trip_at: string; avg_attention: number | null; avg_speed_mph: number | null; top_speed_mph: number | null };
 
 export type CardRow = { tripId: string; driverId: string; createdAt: string; card: ReportCard };
 

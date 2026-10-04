@@ -9,6 +9,44 @@ class CoreTest {
 
     @Test fun reportCardEmpty() = assertNull(ReportCard.build(emptyList()))
 
+    @Test fun tripRecapSpeedsAndAlertness() {
+        val speed = SpeedTracker()
+        assertNull(speed.avg); assertNull(speed.top)
+        listOf(30.0, 60.0, 45.0, -1.0, Double.NaN).forEach(speed::add) // bad readings are ignored
+        assertEquals(45.0, speed.avg); assertEquals(60.0, speed.top)
+
+        val card = ReportCard.build((0 until 6).map { sample(it, 20.0) })
+        val scored = TripRecap.of(durationMs = 61_000, speed = speed, card = card)
+        assertEquals(2, scored.durationMin)
+        assertEquals(80, scored.alertness); assertEquals("GOOD", scored.alertnessLabel)
+        assertEquals("GREAT", TripRecap(1, null, null, TripRecap.alertnessOf(10.0)).alertnessLabel)
+        assertEquals("LOW", TripRecap(1, null, null, TripRecap.alertnessOf(55.0)).alertnessLabel)
+
+        // No backend verdicts: speeds still show, alertness is missing rather than made up.
+        val unscored = TripRecap.of(durationMs = 30_000, speed = speed, card = null)
+        assertEquals(45.0, unscored.avgSpeedMph); assertNull(unscored.alertness); assertNull(unscored.alertnessLabel)
+    }
+
+    @Test fun tripHistoryKeepsNewestFirstAndSurvivesBadData() {
+        fun trip(n: Long) = TripSummary(endedAtMs = n, durationMin = 5, grade = "B", avgRisk = 20.0, peakRisk = 45.5, alerts = 1, demo = n % 2 == 0L)
+        var h = emptyList<TripSummary>()
+        for (n in 1L..(TripHistory.MAX_TRIPS + 5)) h = TripHistory.add(h, trip(n))
+        assertEquals(TripHistory.MAX_TRIPS, h.size)
+        assertEquals(TripHistory.MAX_TRIPS + 5L, h.first().endedAtMs) // newest first
+        assertEquals(6L, h.last().endedAtMs) // oldest five dropped
+        assertEquals(h, TripHistory.decode(TripHistory.encode(h)))
+        assertEquals(emptyList(), TripHistory.decode(null))
+        assertEquals(emptyList(), TripHistory.decode("not json"))
+
+        // Speeds are saved with the trip; history written before they existed still loads, without them.
+        val speed = SpeedTracker().apply { add(40.0); add(70.0) }
+        val saved = TripSummary.of(ReportCard.build((0 until 6).map { sample(it, 20.0) })!!, endedAtMs = 99, demo = false, speed = speed)
+        assertEquals(55.0, saved.avgSpeedMph); assertEquals(70.0, saved.topSpeedMph)
+        assertEquals(listOf(saved), TripHistory.decode(TripHistory.encode(listOf(saved))))
+        val old = TripHistory.decode("""[{"endedAtMs":1,"durationMin":5,"grade":"B","avgRisk":20.0,"peakRisk":45.5,"alerts":1,"demo":true}]""").single()
+        assertEquals("B", old.grade); assertNull(old.avgSpeedMph); assertNull(old.topSpeedMph)
+    }
+
     @Test fun reportCardCalmTripGetsA() {
         val c = ReportCard.build(List(31) { sample(it, 5.0) })!!
         assertEquals("A", c.grade)
@@ -52,6 +90,24 @@ class CoreTest {
         assertEquals(BackendFrame.Dismissed(), decodeBackendFrame("""{"type":"dismissed"}"""))
         assertEquals(BackendFrame.Dismissed("drowsy", 0.95), decodeBackendFrame("""{"type":"dismissed","factor":"drowsy","multiplier":0.95}"""))
         assertEquals(BackendFrame.Navigate("rest stop"), decodeBackendFrame("""{"type":"navigate","query":"rest stop"}"""))
+    }
+
+    @Test fun reportDecodes() {
+        val r = decodeBackendFrame(
+            """{"type":"report","score":33.1,"grade":"F","summary":"Alex's drive was risky.","avg_speed_mph":58,"top_speed_mph":61.5,""" +
+                """"attention_score":97,"duration_s":1020,"distance_mi":16.2,"image":"iVBORw0KGgo="}""",
+        ) as BackendFrame.Report
+        assertEquals(33.1, r.score, 1e-9)
+        assertEquals("F", r.grade)
+        assertEquals("Alex's drive was risky.", r.summary)
+        assertEquals(58.0, r.avgSpeedMph, 1e-9)
+        assertEquals(61.5, r.topSpeedMph, 1e-9)
+        assertEquals(97.0, r.attentionScore, 1e-9)
+        assertEquals(1020, r.durationS)
+        assertEquals(16.2, r.distanceMi, 1e-9)
+        assertEquals("iVBORw0KGgo=", r.image)
+        // A frame with only the type still decodes (every field defaults), so an older backend never crashes the app.
+        assertEquals(BackendFrame.Report(0.0, "", "", 0.0, 0.0, 0.0, 0, 0.0, ""), decodeBackendFrame("""{"type":"report"}"""))
     }
 
     @Test fun evaluationDecodes() {

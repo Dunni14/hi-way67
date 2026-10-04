@@ -37,8 +37,9 @@ window ─> smooth (3) ─> state levels ─> z = Σ w·x (capped ln 50) ─> R 
 | `GET /trips/{id}/report` | Series, events, max score, seconds per tier, grade A-D (max tier), plus `card` |
 | `GET /trips/{id}/card` | Report card: stored after the trip ended, computed live before. `gps` holds the route, alert markers and limit stats |
 | `GET /trips/{id}/observations` | The stored expression label for every window |
-| `GET /drivers/{id}/trips` | Past trips with grades and `card_score` / `card_grade` |
-| `GET /drivers/{id}/profile` | `careIndex`, `scoredTrips`, `learnedShift`, current `notify_threshold`, weight multipliers, and `scorecard` (the `driver_scorecard` view: scored trips, average score, 30-day average, night trips, distance) |
+| `GET /trips/{id}/card.png` | The report card as a 1080x1960 PNG (what the agent attaches at trip end). No location on it |
+| `GET /drivers/{id}/trips` | Past trips with grades, `card_score` / `card_grade`, and per drive `avg_speed_mph`, `top_speed_mph`, `attention_score` (the card's attention category, 0-100), `duration_s`, `distance_mi`. These come from the stored card, so they stay after the raw windows expire |
+| `GET /drivers/{id}/profile` | `careIndex`, `scoredTrips`, `learnedShift`, current `notify_threshold`, weight multipliers, and `scorecard` (the `driver_scorecard` view: scored trips, average score, 30-day average, night trips, distance, average attention, average and top speed) |
 
 Errors: 400 invalid body, 404 unknown trip or window, 409 ended trip or duplicate `ts`.
 
@@ -55,6 +56,8 @@ The window takes an optional `gps` field: up to 10 fixes (`t, lat, lon, speed_mp
 - Smoothing applies to numeric signals; booleans and `longest_eye_closure_s` use the newest window so a microsleep isn't averaged away.
 
 ## Report card and adaptive notify threshold
+
+**Image.** `report/image.ts` renders the card to PNG with `satori` (flexbox layout to SVG, text as paths) and `@resvg/resvg-js` (SVG to PNG), using the bundled Inter font from `@fontsource/inter`: safety score and grade, average speed, top speed, attention score, five category meters, warnings and peak risk. Speeds are mph. It also shows duration, distance, time over the limit, hard brakes and swerves, phone use and warnings, plus an "In brief" block from `report/narrative.ts`: a deterministic few-sentence account (how the drive went, the one or two weakest areas, whether contacts were told; no LLM, no location). The same text goes to the chat after the image and to the phone in the `report` frame. Run it offline with `RiskService.cardImage(tripId)`.
 
 Code: `risk/expression.ts`, `risk/card.ts`, `risk/profile.ts`; all numbers are in `weights.json` (`expression`, `report`, `adaptive`). Tests: `risk/report.test.ts` and the last two tests in `risk/api.test.ts`.
 

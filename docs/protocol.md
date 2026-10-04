@@ -127,6 +127,25 @@ The engine's verdict on one `risk_window` (same `ts`).
 
 The phone displays it and plays its alarm sound when `actions` contains `voice_urgent`. The backend speaks and notifies on its own.
 
+### `report`
+Sent once after `trip_end`, when the risk engine scored the trip. It is the report the backend generates for friends and family (a PNG plus a few sentences), so the driver sees what was shared.
+```json
+{
+  "type": "report", "score": 33.1, "grade": "F",
+  "summary": "Alex's drive was risky. Alex showed signs of drowsiness (42 yawns). A microsleep triggered an urgent alert and contacts were told.",
+  "avg_speed_mph": 58, "top_speed_mph": 61, "attention_score": 97,
+  "duration_s": 1020, "distance_mi": 16.2, "image": "<base64 PNG>"
+}
+```
+| Field | Notes |
+|---|---|
+| `score`, `grade` | The trip's safety score (0–100, higher is better) and letter grade A–F. Not the same as the per-window `score` of `evaluation`, where higher is worse |
+| `summary` | A few plain sentences, no location |
+| `avg_speed_mph`, `top_speed_mph`, `attention_score` | Per-drive statistics, also in `GET /drivers/{id}/trips` |
+| `image` | Base64 PNG, 1080 wide; `""` if rendering failed |
+
+It is sent even when the sharing mode is `never`; whether chats get it depends on sharing.
+
 ### `speak`
 ```json
 {

@@ -4,7 +4,7 @@
 // proactive posts. If no group is known, posts fan out to known DM spaces.
 // The binding is saved to .group.json and restored at startup (GROUP_CHAT_ID overrides it).
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { Spectrum, type Message, type Space } from "spectrum-ts";
+import { Spectrum, attachment, type Message, type Space } from "spectrum-ts";
 import { imessage } from "@spectrum-ts/imessage";
 import { telegram } from "@spectrum-ts/telegram";
 import { config, required } from "../config.ts";
@@ -154,20 +154,33 @@ async function route(space: Space, message: Message, onMessage: (m: Inbound) => 
   await onMessage({ contact, space, message, text: body, isGroup });
 }
 
+type Content = Parameters<Space["send"]>[0];
+/** Builds the content per recipient: an attachment builder should not be shared between sends. */
+type MakeContent = () => Content;
+
 /** Post to the family group (or every known DM as fallback). `minRole` limits who receives it. */
 export async function post(text: string, minRole: Role = "friend") {
+  await deliver(() => text, minRole, text);
+}
+
+/** Same routing as `post`, with a PNG attachment. */
+export async function postImage(png: Buffer, minRole: Role = "friend", name = "drive-report.png") {
+  await deliver(() => attachment(png, { name, mimeType: "image/png" }), minRole, `[image ${name}]`);
+}
+
+async function deliver(make: MakeContent, minRole: Role, label: string) {
   if (groupSpace && minRole === "friend") {
-    await groupSpace.send(text);
+    await groupSpace.send(make());
     return;
   }
   const targets = allContacts().filter((c) => minRole === "friend" || c.role === "guardian");
   if (targets.length === 0) {
     // Dev mode (no contacts.json): best we can do is the group.
-    if (groupSpace) await groupSpace.send(text);
-    else console.warn(`[spectrum] no group chat or contacts yet, not posted: ${text}`);
+    if (groupSpace) await groupSpace.send(make());
+    else console.warn(`[spectrum] no group chat or contacts yet, not posted: ${label}`);
     return;
   }
-  for (const c of targets) await dm(c.handle, text);
+  for (const c of targets) await dmContent(c.handle, make);
 }
 
 /**
@@ -175,6 +188,14 @@ export async function post(text: string, minRole: Role = "friend") {
  * iMessage DMs can be opened from our side (Telegram bots can't start a chat).
  */
 export async function dm(handle: string, text: string) {
+  await dmContent(handle, () => text);
+}
+
+export async function dmImage(handle: string, png: Buffer, name = "drive-report.png") {
+  await dmContent(handle, () => attachment(png, { name, mimeType: "image/png" }));
+}
+
+async function dmContent(handle: string, make: MakeContent) {
   try {
     let space = dmSpaces.get(handle);
     const contact = allContacts().find((c) => c.handle === handle);
@@ -186,7 +207,7 @@ export async function dm(handle: string, text: string) {
       console.warn(`[spectrum] can't DM ${contact?.name ?? handle} on telegram until they message the bot privately once`);
       return;
     }
-    await space.send(text);
+    await space.send(make());
   } catch (err) {
     console.error(`[spectrum] DM to ${handle} failed:`, err);
   }

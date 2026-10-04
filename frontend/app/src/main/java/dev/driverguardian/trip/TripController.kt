@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import dev.driverguardian.alarm.AlarmPlayer
 import dev.driverguardian.data.AppSettings
 import dev.driverguardian.data.SettingsStore
+import dev.driverguardian.data.TripHistoryStore
 import dev.driverguardian.net.BackendClient
 import dev.driverguardian.net.Conn
 import dev.driverguardian.sensing.FakePresageSource
@@ -21,7 +22,11 @@ import dg.core.PhoneFrame
 import dg.core.RealClock
 import dg.core.ReportCard
 import dg.core.TripClock
+import dg.core.SpeedTracker
+import dg.core.TripHistory
+import dg.core.TripRecap
 import dg.core.TripSample
+import dg.core.TripSummary
 import dg.core.WindowAggregator
 import dg.core.WindowSignals
 import kotlinx.coroutines.Job
@@ -111,6 +116,22 @@ class TripController(app: Application) : AndroidViewModel(app) {
     private val _report = MutableStateFlow<ReportCard?>(null)
     val report: StateFlow<ReportCard?> = _report
 
+    /** The report the backend generated at trip end and shared with friends and family; arrives shortly after [endTrip]. */
+    private val _sharedReport = MutableStateFlow<BackendFrame.Report?>(null)
+    val sharedReport: StateFlow<BackendFrame.Report?> = _sharedReport
+
+    // Finished trips, newest first, kept on the phone for the Stats tab.
+    private val historyStore = TripHistoryStore(app)
+    private val _history = MutableStateFlow<List<TripSummary>>(emptyList())
+    val localHistory: StateFlow<List<TripSummary>> = _history
+    private var tripDemo = false
+
+    // End-of-trip popup: speeds seen during the trip plus the engine's alertness, until dismissed.
+    private var speed = SpeedTracker()
+    private val _recap = MutableStateFlow<TripRecap?>(null)
+    val recap: StateFlow<TripRecap?> = _recap
+    fun dismissRecap() { _recap.value = null }
+
     /** Pacing of the current trip: [DemoClock] in demo mode, else real time. */
     private var clock: TripClock = RealClock
     private var tripStartMs = 0L
@@ -121,6 +142,7 @@ class TripController(app: Application) : AndroidViewModel(app) {
             _settings.value = settings
             client.connect(settings.host)
         }
+        viewModelScope.launch { _history.value = historyStore.load() }
     }
 
     fun saveSettings(s: AppSettings) {
@@ -143,12 +165,14 @@ class TripController(app: Application) : AndroidViewModel(app) {
         val start = System.currentTimeMillis()
         tripStartMs = start
         val demo = settings.demoMode
+        tripDemo = demo
         // Demo mode sends windows faster (DemoClock: one per 10 script seconds) but stamps them in real
         // time, so the engine's window-counted holds speed up while its cooldowns stay real.
         val c: TripClock = if (demo) DemoClock else RealClock
         clock = c
         client.send(PhoneFrame.TripStart)
-        sentEvents.clear(); samples.clear(); _report.value = null
+        sentEvents.clear(); samples.clear(); _report.value = null; _sharedReport.value = null
+        speed = SpeedTracker(); _recap.value = null
         _ui.value = UiState(running = true, calibrating = true, calibrationLeftSec = calibrationLeftSec())
 
         val agg = WindowAggregator()
@@ -157,7 +181,7 @@ class TripController(app: Application) : AndroidViewModel(app) {
             agg.onMotion(DemoScript.DEMO_SPEED_MPH, 42.2808, -83.743)
         } else {
             motion = MotionSource(getApplication(),
-                onMotion = { mph, lat, lon -> viewModelScope.launch { agg.onMotion(mph, lat, lon) } },
+                onMotion = { mph, lat, lon -> viewModelScope.launch { speed.add(mph); agg.onMotion(mph, lat, lon) } },
                 onEvent = { ev -> viewModelScope.launch { agg.onImuEvent(ev) } },
             ).also { it.start() }
         }
@@ -204,13 +228,23 @@ class TripController(app: Application) : AndroidViewModel(app) {
         motion?.stop(); motion = null
         alarm.stop()
         client.send(PhoneFrame.TripEnd)
-        if (wasRunning) _report.value = ReportCard.build(samples.toList())
+        if (wasRunning) {
+            val card = ReportCard.build(samples.toList())
+            _report.value = card
+            if (card != null) {
+                val updated = TripHistory.add(_history.value, TripSummary.of(card, System.currentTimeMillis(), tripDemo, speed))
+                _history.value = updated
+                viewModelScope.launch { historyStore.save(updated) }
+            }
+            _recap.value = TripRecap.of(System.currentTimeMillis() - tripStartMs, speed, card)
+        }
         _ui.value = _ui.value.copy(running = false, calibrating = false, alarmOn = false)
     }
 
     private fun sendWindow(w: PhoneFrame.RiskWindow) {
         client.sendWindow(w)
         sentEvents[w.ts] = w.events
+        if (tripDemo) speed.add(w.speed) // demo mode has no GPS callbacks; its speed only shows up in the windows
         val u = _ui.value
         _ui.value = u.copy(lastSignals = w.signals, windowsSent = u.windowsSent + 1, speedMph = w.speed, calibrationLeftSec = calibrationLeftSec())
     }
@@ -244,6 +278,7 @@ class TripController(app: Application) : AndroidViewModel(app) {
                     _ui.value = _ui.value.copy(alarmOn = false, feedbackFactor = f.factor, feedbackMultiplier = f.multiplier)
                 }
                 is BackendFrame.Speak -> voice.play(f)
+                is BackendFrame.Report -> _sharedReport.value = f
                 is BackendFrame.Navigate -> onNavigate(f.query)
                 is BackendFrame.Error -> { android.util.Log.w("Backend", f.message); onContactsFrame(f) }
                 is BackendFrame.Contacts, is BackendFrame.ContactInvite, is BackendFrame.ContactJoined -> onContactsFrame(f)

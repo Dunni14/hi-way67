@@ -33,7 +33,7 @@ vs the fixed demo limit, a rounded card with the driver camera (the design shows
 speech (Presage talking / mic listening). Tiles use the design's three states: green value, blue value, red tile.
 The design's second tile is "Distraction"; the app shows drowsiness there because gaze is not measured, and that
 tile has no icon in the design yet, so it uses a Material moon. The avatar on the status pill shows the driver's initial;
-its ring is the backend connection (green, yellow, red). Icons in `app/src/main/res/drawable/` are exported from the Figma file. Stats shows the last report card; Contacts lists the backend allowlist (guardian switch, Telegram invite links,
+its ring is the backend connection (green, yellow, red). Icons in `app/src/main/res/drawable/` are exported from the Figma file. Ending a trip shows a summary popup (average speed, top speed, alertness) with a link to the report card, which shows the report the backend generated and shared with friends and family (image and summary, from the `report` frame) above the phone's own risk chart. Stats is the weekly dashboard and trip history from Tiger Data; while the backend is unreachable it lists the trips kept on the phone instead. Contacts lists the backend allowlist (guardian switch, Telegram invite links,
 "Create group" for the family chat); Settings links to the Debug screen.
 
 Visual style: the mockups are in [`docs/design/figma/`](../docs/design/figma/README.md). Colors, type styles and the shared

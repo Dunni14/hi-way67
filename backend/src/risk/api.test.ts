@@ -187,6 +187,20 @@ test("trip end stores a report card, observations and moves the driver profile",
 
   const hist = (await call("GET", "/drivers/iris/trips")).body;
   assert.equal(hist[0].card_grade, end.card.grade);
+  assert.equal(hist[0].avg_speed_mph, end.card.metrics.avg_speed_mph);
+  assert.equal(hist[0].top_speed_mph, end.card.metrics.max_speed_mph);
+  assert.equal(hist[0].attention_score, end.card.categories.attention);
+  assert.equal(row.attention_score, end.card.categories.attention);
+  assert.ok(hist[0].top_speed_mph >= hist[0].avg_speed_mph && hist[0].duration_s === 700);
+  const sc = (await call("GET", "/drivers/iris/profile")).body.scorecard;
+  assert.equal(sc.top_speed_mph, end.card.metrics.max_speed_mph);
+
+  const img = await fetch(`${base}/trips/${t}/card.png`);
+  assert.equal(img.status, 200);
+  assert.equal(img.headers.get("content-type"), "image/png");
+  const png = Buffer.from(await img.arrayBuffer());
+  assert.equal(png.readUInt32BE(16), 1080);
+  assert.equal((await call("GET", "/trips/nope/card.png")).status, 404);
 
   const rep = (await call("GET", `/trips/${t}/report`)).body;
   assert.equal(rep.card.score, end.card.score);
