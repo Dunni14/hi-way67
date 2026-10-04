@@ -38,5 +38,8 @@ export const config = {
     },
   },
 
+  // Postgres (Tiger Data / Timescale compatible). Unset = risk REST API disabled.
+  databaseUrl: optional("DATABASE_URL"),
+
   roastWindowMs: 3 * 60_000,
 };

@@ -1,6 +1,6 @@
 // One phone at a time talks to us over a WebSocket at ws://<host>:PORT/phone.
 // GET /health returns a small status JSON for quick checks.
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import { PhoneMsg, type BackendMsg } from "./protocol.ts";
 
@@ -23,13 +23,16 @@ export function startPhoneServer(
   port: number,
   onMessage: (msg: PhoneMsg) => void | Promise<void>,
   status: () => object,
+  /** Optional extra HTTP routes (e.g. the risk engine REST API); return true if handled. */
+  extraRoutes?: (req: IncomingMessage, res: ServerResponse) => Promise<boolean>,
 ) {
-  const http = createServer((req, res) => {
+  const http = createServer(async (req, res) => {
     if (req.url === "/health") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, phoneConnected: isPhoneConnected(), ...status() }));
       return;
     }
+    if (extraRoutes && (await extraRoutes(req, res))) return;
     res.writeHead(404).end();
   });
 

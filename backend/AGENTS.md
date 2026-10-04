@@ -9,11 +9,12 @@ Node / TypeScript backend for Driver Guardian (MHacks 26). It talks to the Andro
 - `src/ws/protocol.ts`: **source of truth** for the phone protocol. A change here also needs the Android client, `PROTOCOL.md` and `../docs/protocol.md` updated in the same change.
 - `src/agent/`: Spectrum connection (`spectrum.ts`), classifier, answers, roast, contacts allowlist, driver intent regexes.
 - `src/voice/`: ElevenLabs TTS, the one-at-a-time driver speech queue, spoken line templates.
+- `src/risk/`: logistic risk engine (pure core, service, Postgres store). `src/http/risk.ts`: its REST routes.
 - `src/trip/`: live trip state, and the `TripStore` interface. The only implementation is in-memory; Tiger Data is a TODO.
 - `src/llm/openrouter.ts`: LLM client. Every LLM call has a non-LLM fallback. Keep it that way so the demo never stalls.
 - `src/dev/`: `fakePhone.ts` (simulates the Android app) and `smokeTts.ts`.
 
-Risk scoring, the decision tree's timing (hold and cooldown) and Presage all belong to the phone app in `../android/`, which does not send anything to the backend yet. The backend trusts `R` and `tier` from the phone and does not compute risk.
+The phone can either send its own `R` / `alert` frames (legacy path) or call the risk engine REST API (`src/risk/`, `src/http/risk.ts`, needs `DATABASE_URL`), which computes score, tier and actions server-side. See [`../docs/risk-engine.md`](../docs/risk-engine.md). Presage runs on the phone.
 
 ## Commands
 
@@ -21,7 +22,8 @@ Risk scoring, the decision tree's timing (hold and cooldown) and Presage all bel
 - `NO_SPECTRUM=1 npm run dev`: phone side only, no iMessage.
 - `npm run fake-phone` runs the scripted demo. Add `-- -i` for interactive mode (`win`, `alert`, `say`, …; see `../docs/backend.md`).
 - `npm run smoke:tts`: writes one mp3 per voice tier to `out/`.
-- `npm run typecheck`: run this after every change. There is no test suite.
+- `npm run typecheck`: run this after every change.
+- `npm test`: risk engine unit and HTTP tests (in-process Postgres via PGlite, no server needed).
 
 TypeScript runs straight from source with `tsx`, so there is no build step. Imports use explicit `.ts` extensions (`verbatimModuleSyntax`, `allowImportingTsExtensions`). `noUncheckedIndexedAccess` is on.
 

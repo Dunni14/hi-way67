@@ -12,6 +12,7 @@ import { answerQuestion } from "./agent/answer.ts";
 import { parseDriverUtterance } from "./agent/driverIntent.ts";
 import { roast } from "./agent/roast.ts";
 import { allContacts } from "./agent/contacts.ts";
+import type { Evaluation } from "./risk/types.ts";
 
 const LISTEN_MS = 5000;
 
@@ -98,9 +99,21 @@ export function createOrchestrator(store: TripStore) {
     }
   }
 
-  async function onAlert(phoneTier: Tier, dominant: Dominant, R: number) {
-    // Kids in the car bump the 70 tier up a level (README §4).
-    const tier: Tier = phoneTier === 70 && trip.kidsInCar ? 85 : phoneTier;
+  /**
+   * Risk engine (REST API) -> existing voice / iMessage path. The engine has
+   * already applied hold, cooldown and the kids bump, so only act when it asks
+   * for a voice action, and don't bump again.
+   */
+  async function onRiskEvaluation(ev: Evaluation) {
+    if (ev.tier === 0 || !ev.actions.some((a) => a.startsWith("voice_"))) return;
+    const tier: Tier = ev.tier === 3 ? 85 : ev.tier === 2 ? 70 : 40;
+    await onAlert(tier, ev.dominant, ev.score, { bumped: true });
+  }
+
+  async function onAlert(phoneTier: Tier, dominant: Dominant, R: number, opts: { bumped?: boolean } = {}) {
+    // Kids in the car bump the 70 tier up a level (README §4). Alerts from the
+    // risk engine arrive already bumped.
+    const tier: Tier = !opts.bumped && phoneTier === 70 && trip.kidsInCar ? 85 : phoneTier;
     trip.recordAlert(tier, dominant, R);
     console.log(`[alert] tier=${tier} (${dominant}) R=${Math.round(R)}`);
 
@@ -220,7 +233,7 @@ export function createOrchestrator(store: TripStore) {
     }
   }
 
-  return { onPhone, onChat };
+  return { onPhone, onChat, onRiskEvaluation };
 }
 
 function isNight(date: Date) {

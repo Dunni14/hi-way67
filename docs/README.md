@@ -14,7 +14,8 @@ Technical documentation for the code in this repository. The product pitch, trac
 | [protocol.md](protocol.md) | Phone ↔ backend WebSocket contract, with example frames and sequences |
 | [imessage-agent.md](imessage-agent.md) | Photon Spectrum agent: roles, message classification, the four flows, the roast, sharing modes |
 | [voice.md](voice.md) | ElevenLabs TTS, tiered delivery, the driver speech queue, spoken lines, driver intent parsing |
-| [phone-app.md](phone-app.md) | Android app: current state, and what it still must send and do |
+| [risk-engine.md](risk-engine.md) | Logistic risk engine: scoring, decision rules, REST API, Postgres storage |
+| [phone-app.md](phone-app.md) | Specification for the Android app (not started): what it must send and do |
 | [persistence.md](persistence.md) | `TripStore` interface, the in-memory stub, and what the Tiger Data implementation must provide |
 
 ## Status at a glance
