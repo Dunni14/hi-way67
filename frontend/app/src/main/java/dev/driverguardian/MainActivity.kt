@@ -30,6 +30,8 @@ import dev.driverguardian.ui.DashcamScreen
 import dev.driverguardian.ui.DriverGuardianColors
 import dev.driverguardian.ui.PlaceholderScreen
 import dev.driverguardian.ui.TabBar
+import dev.driverguardian.ui.TripHistoryScreen
+import dev.driverguardian.ui.TripRecapDialog
 import dev.driverguardian.ui.DebugScreen
 import dev.driverguardian.ui.ReportCardScreen
 import dev.driverguardian.ui.SettingsScreen
@@ -80,17 +82,19 @@ class MainActivity : ComponentActivity() {
         val settings by vm.settingsFlow.collectAsState()
         val report by vm.report.collectAsState()
         val shared by vm.sharedReport.collectAsState()
+        val history by vm.history.collectAsState()
+        var showReport by remember { mutableStateOf(false) }
         val parked = !ui.running || ui.speedMph < 3
-        // Jump to the report card when a trip ends.
-        LaunchedEffect(report, shared) { if (report != null || shared != null) tab = "stats" }
+        val recap by vm.recap.collectAsState()
         // Leaving the parked state always brings the driver back to the Drive tab.
         LaunchedEffect(parked) { if (!parked) { tab = "drive"; showDebug = false } }
 
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f)) {
                 when (tab) {
-                    "stats" -> if (report != null || shared != null) ReportCardScreen(report, shared) { tab = "drive" }
-                        else PlaceholderScreen("Stats", "No trip yet. Start one on the Drive tab; its report card (grade, risk over time, advice) shows up here when it ends.")
+                    // The report card of the trip that just ended (with what the backend shared, once it arrives); Done drops back to the history list.
+                    "stats" -> report?.takeIf { showReport }?.let { ReportCardScreen(it, shared) { showReport = false } }
+                        ?: TripHistoryScreen(history, onOpenLatest = if (report != null) ({ showReport = true }) else null)
                     "contacts" -> PlaceholderScreen(
                         "Contacts",
                         "Who gets alerts is set on the backend for now: contacts.json lists guardians (alerts and location) " +
@@ -106,6 +110,13 @@ class MainActivity : ComponentActivity() {
                 }
             }
             TabBar(selected = tab, parked = parked) { tab = it; showDebug = false }
+        }
+        // When a trip ends, a popup sums it up; the full report card is one tap away.
+        recap?.let { r ->
+            TripRecapDialog(
+                r, onDone = vm::dismissRecap,
+                onReport = if (report != null) ({ vm.dismissRecap(); tab = "stats"; showReport = true }) else null,
+            )
         }
     }
 }

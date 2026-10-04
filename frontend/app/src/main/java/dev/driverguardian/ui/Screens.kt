@@ -13,6 +13,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -39,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import dev.driverguardian.R
 import dev.driverguardian.data.AppSettings
@@ -48,7 +51,12 @@ import dev.driverguardian.trip.UiState
 import dev.driverguardian.voice.VoicePlayer
 import dg.core.SPEED_LIMIT_MPH
 import dg.core.SharingMode
+import dg.core.TripRecap
+import dg.core.TripSummary
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 // Palette and shapes from the Figma file (MHacks | AutoAI, "UI" section).
 private val Main = Color(0xFF366DE1) // Menu main
@@ -371,6 +379,79 @@ fun SettingsScreen(s: AppSettings, onSave: (AppSettings) -> Unit, onDebug: () ->
             Spacer(Modifier.width(8.dp)); Text("Demo mode (scripted driver signals, fake 65 mph)", color = OnSurface)
         }
         OutlinedButton(onClick = onDebug) { Text("Debug: features, weights, face values") }
+    }
+}
+
+/** Popup shown when a trip ends: how fast and how alert the drive was. */
+@Composable
+fun TripRecapDialog(recap: TripRecap, onDone: () -> Unit, onReport: (() -> Unit)?) {
+    Dialog(onDismissRequest = onDone) {
+        Column(Modifier.fillMaxWidth().clip(CardShape).background(Surface).padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Trip summary", color = OnSurface, fontSize = 22.sp)
+            Text("${recap.durationMin} min", color = SystemText, style = Label)
+            RecapRow("Average speed", recap.avgSpeedMph?.let { "%.0f mph".format(it) } ?: "--", SystemText)
+            RecapRow("Top speed", recap.topSpeedMph?.let { "%.0f mph".format(it) } ?: "--", SystemText)
+            val alertColor = when (recap.alertnessLabel) { "GREAT" -> Good; "GOOD" -> Main; "LOW" -> Bad; else -> SystemText }
+            RecapRow("Alertness", recap.alertness?.let { "$it%  ${recap.alertnessLabel}" } ?: "Not scored", alertColor)
+            if (recap.alertness == null) Text("Alertness comes from the backend's scoring, which this trip did not get.", color = SystemText, style = Label)
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (onReport != null) OutlinedButton(onClick = onReport, modifier = Modifier.weight(1f), shape = CardShape) { Text("View report") }
+                Button(onClick = onDone, modifier = Modifier.weight(1f), shape = CardShape) { Text("Done") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecapRow(label: String, value: String, valueColor: Color) {
+    Row(
+        Modifier.fillMaxWidth().clip(CardShape).background(Color.White).padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, color = SystemText, style = Label, modifier = Modifier.weight(1f))
+        Text(value, color = valueColor, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+/** Stats tab: finished trips, newest first. The latest one reopens its full report card. */
+@Composable
+fun TripHistoryScreen(history: List<TripSummary>, onOpenLatest: (() -> Unit)?) {
+    Column(Modifier.fillMaxSize().background(ScreenBg).statusBarsPadding().padding(horizontal = 15.dp).padding(top = 20.dp)) {
+        Text("Stats", color = OnSurface, fontSize = 22.sp, modifier = Modifier.padding(horizontal = 9.dp))
+        Text("Trip history", color = SystemText, style = Label, modifier = Modifier.padding(start = 9.dp, top = 12.dp, bottom = 8.dp))
+        if (history.isEmpty()) {
+            Text(
+                "No trips yet. Finish one on the Drive tab and it is listed here with its grade.",
+                color = SystemText, fontSize = 15.sp, modifier = Modifier.padding(horizontal = 9.dp),
+            )
+            return@Column
+        }
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
+            itemsIndexed(history) { i, trip -> TripRow(trip, onOpen = if (i == 0) onOpenLatest else null) }
+        }
+    }
+}
+
+@Composable
+private fun TripRow(t: TripSummary, onOpen: (() -> Unit)?) {
+    val date = remember(t.endedAtMs) { SimpleDateFormat("EEE d MMM, h:mm a", Locale.getDefault()).format(Date(t.endedAtMs)) }
+    Row(
+        Modifier.fillMaxWidth().clip(CardShape).background(Color.White)
+            .then(if (onOpen != null) Modifier.clickable(onClick = onOpen) else Modifier)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(t.grade, color = gradeColor(t.grade), fontSize = 36.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(44.dp))
+        Column(Modifier.weight(1f)) {
+            Text(date + if (t.demo) " · demo" else "", color = OnSurface, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+            val speeds = listOfNotNull(t.avgSpeedMph?.let { "avg %.0f mph".format(it) }, t.topSpeedMph?.let { "top %.0f mph".format(it) })
+            Text((listOf("${t.durationMin} min") + speeds).joinToString(" · "), color = SystemText, style = Label, maxLines = 1)
+            Text(
+                "avg risk %.0f · peak %.0f · ".format(t.avgRisk, t.peakRisk) + if (t.alerts == 1) "1 alert" else "${t.alerts} alerts",
+                color = SystemText, style = Label, maxLines = 1,
+            )
+        }
+        if (onOpen != null) Text("Report", color = Main, style = Label)
     }
 }
 

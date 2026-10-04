@@ -276,7 +276,7 @@ Endpoint `ws://<backend-host>:8787/phone`. Make the host configurable (settings 
 |---|---|
 | `dismissed` | Weight nudge, stop alarm |
 | `navigate` `{query}` | `ACTION_VIEW` intent with `geo:0,0?q=<query>` |
-| `report` `{score, grade, summary, avg_speed_mph, top_speed_mph, attention_score, duration_s, distance_mi, image}` | Once after `trip_end`: keep it in `TripController.sharedReport`, jump to Stats and show the image (base64 PNG) and summary. It is what the backend shared with friends and family |
+| `report` `{score, grade, summary, avg_speed_mph, top_speed_mph, attention_score, duration_s, distance_mi, image}` | Once after `trip_end`: keep it in `TripController.sharedReport` and show the image (base64 PNG) and summary when the latest trip's report card is opened from Stats. It is what the backend shared with friends and family |
 | `error` `{message}` | Log |
 | `speak` `{id, text, tier, audio, listenAfterMs, context}` | `VoicePlayer`: play `audio` (mp3), or on-device TTS if empty; listen `listenAfterMs` and send `utterance` with the same `context`; always send `speak_done`. |
 
