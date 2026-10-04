@@ -12,7 +12,7 @@
     "smoke:tiger": "tsx --env-file-if-exists=.env src/dev/tigerSmoke.ts",
     "fake-phone": "tsx --env-file-if-exists=.env src/dev/fakePhone.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/risk/*.test.ts src/bandit/*.test.ts src/gps/*.test.ts",
+    "test": "tsx --test src/risk/*.test.ts src/bandit/*.test.ts src/gps/*.test.ts src/agent/*.test.ts",
     "db:schema": "tsx --env-file-if-exists=.env src/dev/applySchema.ts"
   },
   "dependencies": {

@@ -74,6 +74,34 @@ Send when a `speak` has finished playing, including its listen window.
 ```
 If this never arrives, the backend times out and moves on after `text.length / 15` seconds (minimum 2 s), plus `listenAfterMs`, plus 3 s.
 
+### `contact_add`
+Add someone to the allowlist.
+```json
+{ "type": "contact_add", "name": "Sam", "role": "friend", "platform": "telegram" }
+```
+`role` is `guardian` or `friend`; `platform` is `telegram` or `imessage`; `phone` is optional and only meant for iMessage.
+
+- `telegram`: the backend answers with `contact_invite`. A Telegram bot can't reach someone by phone number or @username, so the contact joins by opening the link, which sends `/start <code>` to the bot. When they do, the phone gets `contact_joined`. Needs `telegram` in `SPECTRUM_PROVIDERS` and `TELEGRAM_BOT_USERNAME` on the backend, otherwise an `error`.
+- `imessage`: not available yet; the backend answers with an `error`. Add iMessage contacts to `contacts.json`.
+
+### `contact_remove`
+```json
+{ "type": "contact_remove", "handle": "123456789" }
+```
+`handle` as listed in `contacts`. The backend answers with the updated `contacts` (and an `error` first if nothing matched).
+
+### `contact_update`
+```json
+{ "type": "contact_update", "handle": "123456789", "role": "guardian" }
+```
+The guardian switch in the Contacts tab. Guardians also get the location and guardian-only alerts. The backend answers with the updated `contacts` (and an `error` first if nothing matched).
+
+### `contacts_list`
+```json
+{ "type": "contacts_list" }
+```
+The backend answers with `contacts`.
+
 ## Backend → phone
 
 ### `evaluation`
@@ -128,6 +156,24 @@ Open the maps app searching for `query`.
 { "type": "dismissed", "factor": "drowsy", "multiplier": 0.95 }
 ```
 The driver said "I'm fine". The backend recorded it with the engine as a false alarm, which eased `factor`'s weight for this driver to `multiplier` (×0.95 per false alarm, clamped 0.5–1.5) and penalized the bandit's last pick. The phone stops its alarm and shows the change.
+
+### `contacts`
+```json
+{ "type": "contacts", "list": [{ "handle": "123456789", "name": "Sam", "role": "friend", "platform": "telegram" }], "groupBound": true, "groupLink": "https://t.me/DriverGuardianBot?startgroup=start" }
+```
+The allowlist, in answer to `contacts_list`, `contact_remove` and `contact_update`. `groupBound`: a family group chat is bound. `groupLink`: opens Telegram's picker to add the bot to a group (then send `/start` there); `null` without `TELEGRAM_BOT_USERNAME`. Empty in dev mode (no `contacts.json`).
+
+### `contact_invite`
+```json
+{ "type": "contact_invite", "name": "Sam", "code": "6BT8M9", "link": "https://t.me/DriverGuardianBot?start=6BT8M9" }
+```
+Answer to a Telegram `contact_add`. Show or share `link` with the contact (the driver does this before driving; it is never needed while moving). Single use, expires after 15 minutes, and lost if the backend restarts.
+
+### `contact_joined`
+```json
+{ "type": "contact_joined", "name": "Sam", "role": "friend" }
+```
+Someone opened an invite link and is now allowlisted. Send `contacts_list` to refresh the list.
 
 ### `error`
 ```json

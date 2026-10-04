@@ -18,6 +18,12 @@ export type DriverEvent = z.infer<typeof DriverEvent>;
 export const SpeakContext = z.enum(["checkin", "after_message", "permission", "roast", "info"]);
 export type SpeakContext = z.infer<typeof SpeakContext>;
 
+export const ContactRole = z.enum(["guardian", "friend"]);
+export const ContactPlatform = z.enum(["imessage", "telegram"]);
+
+/** One allowlisted contact, as the `contacts` frame lists them. `handle` is what `contact_remove` takes. */
+export type ContactInfo = { handle: string; name: string; role: "guardian" | "friend"; platform: "imessage" | "telegram" };
+
 // ---- phone -> backend ------------------------------------------------------
 
 /** Raw signals for one window, named as the risk engine's SignalWindow (src/risk/types.ts). Missing = unknown. */
@@ -75,6 +81,19 @@ export const PhoneMsg = z.discriminatedUnion("type", [
   }),
   // Phone finished playing a `speak` (and its listen window, if any).
   z.object({ type: z.literal("speak_done"), id: z.string() }),
+  // Allowlist management. Telegram contacts get an invite link (contact_invite) and join by
+  // opening it; iMessage contacts by phone number are not available from the app yet.
+  z.object({
+    type: z.literal("contact_add"),
+    name: z.string().trim().min(1),
+    role: ContactRole,
+    platform: ContactPlatform,
+    phone: z.string().optional(), // iMessage only
+  }),
+  z.object({ type: z.literal("contact_remove"), handle: z.string() }),
+  // Guardian toggle in the app: guardians also get the location and guardian-only alerts.
+  z.object({ type: z.literal("contact_update"), handle: z.string(), role: ContactRole }),
+  z.object({ type: z.literal("contacts_list") }),
 ]);
 export type PhoneMsg = z.infer<typeof PhoneMsg>;
 
@@ -106,4 +125,11 @@ export type BackendMsg =
       actions: string[]; // voice_nudge, voice_warning, voice_urgent, notify_contacts, …
       calibrating: boolean; // still inside the engine's baseline windows
     }
+  // Allowlist, in answer to contacts_list / contact_remove / contact_update. groupBound: a family group
+  // chat is bound. groupLink: Telegram "add the bot to a group" link (null without TELEGRAM_BOT_USERNAME).
+  | { type: "contacts"; list: ContactInfo[]; groupBound: boolean; groupLink: string | null }
+  // Answer to a Telegram contact_add: share `link` with the contact. Single use, expires in 15 min.
+  | { type: "contact_invite"; name: string; code: string; link: string }
+  // Someone redeemed an invite and is now allowlisted.
+  | { type: "contact_joined"; name: string; role: "guardian" | "friend" }
   | { type: "error"; message: string };

@@ -22,6 +22,13 @@ export const config = {
     providers: optional("SPECTRUM_PROVIDERS", "imessage").split(",").map((p) => p.trim()).filter(Boolean),
   },
   telegramBotToken: optional("TELEGRAM_BOT_TOKEN"),
+  // Bot username (without @) for contact invite links: https://t.me/<username>?start=<code>.
+  telegramBotUsername: optional("TELEGRAM_BOT_USERNAME").replace(/^@/, ""),
+  // Family group chat to bind at startup. Unset = .group.json from the last /start, if any.
+  groupChat: {
+    id: optional("GROUP_CHAT_ID"),
+    platform: optional("GROUP_CHAT_PLATFORM", "telegram"),
+  },
 
   elevenLabs: {
     apiKey: () => required("ELEVENLABS_API_KEY"),

@@ -28,6 +28,7 @@ npm run start
 | `npm run dev` | Same, restarting on file changes |
 | `npm run fake-phone` | Connect as a fake phone and run the scripted demo (see below) |
 | `npm run fake-phone -- -i` | Interactive fake phone |
+| `npm run fake-phone -- --contacts` | Send `contacts_list`, `contact_add` (Telegram, then iMessage) and `contacts_list` again, print the replies, exit |
 | `npm run smoke:tts` | Write `out/tts-{0,40,70,85}.mp3`, one per voice tier |
 | `npm run typecheck` | `tsc --noEmit` |
 
@@ -41,6 +42,9 @@ Set `NO_SPECTRUM=1` to run only the phone side (voice and protocol testing witho
 | `SPECTRUM_PROJECT_SECRET` (or `PROJECT_SECRET`) | none | Unless `NO_SPECTRUM` | Photon secret |
 | `SPECTRUM_PROVIDERS` | `imessage` | No | Comma list: `imessage`, `telegram` |
 | `TELEGRAM_BOT_TOKEN` | none | If `telegram` is enabled | From @BotFather |
+| `TELEGRAM_BOT_USERNAME` | none | For app contact invites | Bot username (with or without `@`), used in `https://t.me/<username>?start=<code>` |
+| `GROUP_CHAT_ID` | none | No | Group chat to bind at startup. Unset = `.group.json` from the last capture |
+| `GROUP_CHAT_PLATFORM` | `telegram` | No | Platform of `GROUP_CHAT_ID`: `telegram` or `imessage` |
 | `ELEVENLABS_API_KEY` | none | For audio | TTS |
 | `ELEVENLABS_VOICE_ID` | `21m00Tcm4TlvDq8ikWAM` | No | Voice used for every tier |
 | `ELEVENLABS_MODEL_ID` | `eleven_flash_v2_5` | No | TTS model |
@@ -114,8 +118,9 @@ Then roast from the group chat and listen to `out/speak-N.mp3`.
 Interactive mode (`-i`) commands:
 
 ```
-start | end | win <R> [yawn,nod,...] | alert <40|70|85> [drowsy|reckless]
-say <text> [as <context>] | share <always|high_only|never> | kids <on|off> | quit
+start | end | win <calm|drowsy|micro|angry> [count] | say <text> [as <context>]
+share <always|high_only|never> | kids <on|off>
+contacts | add <telegram|imessage> <name> [guardian|friend] [phone] | rm <handle> | quit
 ```
 
 The fake phone acks every `speak` with `speak_done` after 500 ms and saves its audio to `out/`. `say` without `as` reuses the context of the last `speak` that asked to listen.
