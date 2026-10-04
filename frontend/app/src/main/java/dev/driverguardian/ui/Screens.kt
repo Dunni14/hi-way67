@@ -45,7 +45,8 @@ fun DashcamScreen(
 ) {
     val parked = !ui.running || ui.speedMph < 3
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        CameraPreview(Modifier.fillMaxSize(), sdkOwnsCamera = liveSensing)
+        // Recreate the preview when ownership flips, so the app never holds the camera Presage needs.
+        key(liveSensing) { CameraPreview(Modifier.fillMaxSize(), sdkOwnsCamera = liveSensing) }
         Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.65f)))
 
         Row(Modifier.align(Alignment.TopStart).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -55,7 +56,7 @@ fun DashcamScreen(
             Text(if (conn == Conn.REPLACED) "replaced" else conn.name.lowercase(), color = Color.White, fontSize = 14.sp)
         }
 
-        Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.align(Alignment.Center).fillMaxWidth().padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             val color = tierColor(ui.tier, ui.R)
             Text(if (ui.calibrating) "Calibrating…" else "%.0f".format(ui.R), color = if (ui.calibrating) Color.White else color,
                 fontSize = if (ui.calibrating) 48.sp else 120.sp, fontWeight = FontWeight.Bold)
@@ -67,22 +68,26 @@ fun DashcamScreen(
             Bar("Reckless", ui.reckless)
         }
 
-        Row(Modifier.align(Alignment.BottomCenter).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             // Controls only work while parked; nothing here matters while moving.
-            if (ui.running) Button(onClick = onEnd, enabled = parked) { Text("End trip") }
-            else Button(onClick = onStart) { Text("Start trip") }
-            OutlinedButton(onClick = onSettings, enabled = parked) { Text("Settings") }
-            OutlinedButton(onClick = onDebug, enabled = parked) { Text("Debug") }
+            val w = Modifier.weight(1f)
+            if (ui.running) Button(onClick = onEnd, enabled = parked, modifier = w) { Text("End trip", maxLines = 1) }
+            else Button(onClick = onStart, modifier = w) { Text("Start trip", maxLines = 1) }
+            OutlinedButton(onClick = onSettings, enabled = parked, modifier = w) { Text("Settings", maxLines = 1) }
+            OutlinedButton(onClick = onDebug, enabled = parked, modifier = w) { Text("Debug", maxLines = 1) }
         }
     }
 }
 
 @Composable
 private fun Bar(label: String, v: Double) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = Color.White, modifier = Modifier.width(90.dp))
-        LinearProgressIndicator(progress = { (v / 100.0).toFloat().coerceIn(0f, 1f) }, modifier = Modifier.width(260.dp).height(10.dp))
-        Text(" %.0f".format(v), color = Color.White)
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, color = Color.White, modifier = Modifier.width(80.dp))
+        LinearProgressIndicator(progress = { (v / 100.0).toFloat().coerceIn(0f, 1f) }, modifier = Modifier.weight(1f).height(10.dp))
+        Text(" %3.0f".format(v), color = Color.White)
     }
 }
 
@@ -92,13 +97,17 @@ fun CameraPreview(modifier: Modifier, sdkOwnsCamera: Boolean = false) {
     val owner = LocalLifecycleOwner.current
     AndroidView(modifier = modifier, factory = { ctx ->
         val view = PreviewView(ctx)
-        if (sdkOwnsCamera) { // Presage binds the camera itself; it just needs our surface.
-            PresagePreview.surface.value = view.surfaceProvider
-            return@AndroidView view
-        }
         val future = ProcessCameraProvider.getInstance(ctx)
         future.addListener({
             val provider = future.get()
+            if (sdkOwnsCamera) {
+                // Presage binds the camera itself and only needs our surface. Release anything the
+                // preview bound earlier (e.g. while demo mode was on) so the SDK can open the camera.
+                provider.unbindAll()
+                PresagePreview.surface.value = view.surfaceProvider
+                return@addListener
+            }
+            PresagePreview.surface.value = null
             val preview = Preview.Builder().build().also { it.setSurfaceProvider(view.surfaceProvider) }
             runCatching {
                 provider.unbindAll()
@@ -106,6 +115,9 @@ fun CameraPreview(modifier: Modifier, sdkOwnsCamera: Boolean = false) {
             }
         }, ContextCompat.getMainExecutor(context))
         view
+    }, onRelease = { view ->
+        // Don't let the SDK pick up a surface from a view that's gone.
+        if (PresagePreview.surface.value === view.surfaceProvider) PresagePreview.surface.value = null
     })
 }
 
@@ -146,7 +158,7 @@ fun SettingsScreen(s: AppSettings, onSave: (AppSettings) -> Unit, onBack: () -> 
         OutlinedTextField(name, { name = it }, label = { Text("Driver name") }, singleLine = true)
         Button(onClick = { onSave(s.copy(host = host, driverName = name)) }) { Text("Save host and name") }
         Text("Share state with guardian", color = Color.White)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column {
             listOf(SharingMode.ALWAYS to "Always", SharingMode.HIGH_ONLY to "High risk only", SharingMode.NEVER to "Never").forEach { (m, label) ->
                 FilterChip(selected = s.sharingMode == m, onClick = { onSave(s.copy(sharingMode = m)) }, label = { Text(label) })
             }

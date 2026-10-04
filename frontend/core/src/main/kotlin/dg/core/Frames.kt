@@ -74,6 +74,24 @@ sealed interface PhoneFrame {
 
     @Serializable @SerialName("alert")
     data class Alert(val tier: Int, val dominant: Dominant, @SerialName("R") val risk: Double) : PhoneFrame
+
+    /** Speech-to-text result. [context] echoes the `speak.context` we listened after, or "free". */
+    @Serializable @SerialName("utterance")
+    data class Utterance(val text: String, val context: String = SpeakContext.FREE) : PhoneFrame
+
+    /** Finished playing a `speak` (and its listen window). */
+    @Serializable @SerialName("speak_done")
+    data class SpeakDone(val id: String) : PhoneFrame
+}
+
+/** `context` values of `speak` / `utterance`, as in protocol.ts. */
+object SpeakContext {
+    const val CHECKIN = "checkin"
+    const val AFTER_MESSAGE = "after_message"
+    const val PERMISSION = "permission"
+    const val ROAST = "roast"
+    const val INFO = "info"
+    const val FREE = "free"
 }
 
 /** Backend -> phone. Parsed leniently so unknown frames never crash the app. */
@@ -81,8 +99,15 @@ sealed interface BackendFrame {
     data object Dismissed : BackendFrame
     data class Navigate(val query: String) : BackendFrame
     data class Error(val message: String) : BackendFrame
-    /** Voice is out of scope; speak frames are received and ignored. */
-    data object Speak : BackendFrame
+    /** A line to say to the driver. [audio] is base64 mp3, empty if TTS failed (fall back to on-device TTS). */
+    data class Speak(
+        val id: String,
+        val text: String,
+        val tier: Int,
+        val audio: String,
+        val listenAfterMs: Long,
+        val context: String,
+    ) : BackendFrame
     data class Unknown(val type: String?) : BackendFrame
 }
 
@@ -94,11 +119,22 @@ fun decodeBackendFrame(text: String): BackendFrame {
     } catch (e: Exception) {
         return BackendFrame.Unknown(null)
     }
-    return when (val type = obj["type"]?.jsonPrimitive?.contentOrNull) {
+    fun str(key: String) = obj[key]?.jsonPrimitive?.contentOrNull
+    return when (val type = str("type")) {
         "dismissed" -> BackendFrame.Dismissed
-        "navigate" -> BackendFrame.Navigate(obj["query"]?.jsonPrimitive?.contentOrNull ?: "rest stop")
-        "error" -> BackendFrame.Error(obj["message"]?.jsonPrimitive?.contentOrNull ?: "")
-        "speak" -> BackendFrame.Speak
+        "navigate" -> BackendFrame.Navigate(str("query") ?: "rest stop")
+        "error" -> BackendFrame.Error(str("message") ?: "")
+        "speak" -> {
+            val id = str("id") ?: return BackendFrame.Unknown(type)
+            BackendFrame.Speak(
+                id = id,
+                text = str("text") ?: "",
+                tier = str("tier")?.toDoubleOrNull()?.toInt() ?: 0,
+                audio = str("audio") ?: "",
+                listenAfterMs = str("listenAfterMs")?.toDoubleOrNull()?.toLong() ?: 0L,
+                context = str("context") ?: SpeakContext.INFO,
+            )
+        }
         else -> BackendFrame.Unknown(type)
     }
 }

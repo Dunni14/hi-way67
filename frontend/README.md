@@ -3,8 +3,8 @@
 Brief: [frontend.md](frontend.md). Wire format: [../backend/PROTOCOL.md](../backend/PROTOCOL.md).
 
 - `core/`: pure Kotlin/JVM, no Android. Frames, signals/baseline/smoothing, `RiskModel`, `AlertGate`, scripted demo, JVM tests.
-- `../android/`: standalone Presage SmartSpectra demo (heart rate readout). Reference for the SDK setup the app uses; not part of this Gradle build.
-- `app/`: Android shell. CameraX preview, OkHttp `BackendClient` (reconnect, buffered windows), GPS/IMU, alarm, Compose UI (dashcam, debug, settings).
+- `../android/`: standalone Presage SmartSpectra demo (face-metrics overlay). Reference for the SDK setup the app uses; not part of this Gradle build.
+- `app/`: Android shell, portrait. CameraX preview, OkHttp `BackendClient` (reconnect, buffered windows), GPS/IMU, alarm, `VoicePlayer` (plays the backend's ElevenLabs audio, listens for replies), Compose UI (dashcam, debug, settings, report card).
 
 ## Build and test
 
@@ -15,15 +15,20 @@ Needs JDK 17–21 (not 25), a `PRESAGE_API_KEY` line in `local.properties` (see 
 
 ## Run against the backend
 
-    cd ../backend && NO_SPECTRUM=1 npm run dev
+    cd ../backend && npm run dev     # NO_SPECTRUM=1 to skip iMessage/Telegram
 
-Set the host in the app's Settings (default `10.0.2.2:8787` for the emulator; use the laptop's LAN IP for a USB phone).
-Demo mode is on by default: scripted driver signals at a fake 65 mph. After the 60 s calibration, tiers 40, 70, 85 fire
-at roughly 3:00, 3:40 and 4:40 into the trip. Turn demo mode off to use real GPS and IMU.
+Set the host in the app's Settings: `10.0.2.2:8787` (default) for the emulator, the laptop's LAN or Tailscale IP for a phone, or `127.0.0.1:8787` after `adb reverse tcp:8787 tcp:8787`.
+Demo mode is on by default: scripted driver signals at a fake 65 mph. The whole pipeline (calibration, smoothing, alert
+hold, script) runs on `DemoClock`: 12× real time until the first alert, then 1.5×, so there's time to answer each spoken
+check-in. Calibration takes 5 s and tiers 40, 70, 85 fire at about 0:15, 0:42 and 1:22. Cooldowns stay at 2 real
+minutes, so the alarm and group alert don't repeat sooner. The rates are constants in `core/.../DemoScript.kt`; use
+`RealClock` for the original 3:00 / 3:40 / 4:40 timeline. Turn demo mode off to use the real camera (Presage), GPS and IMU.
+
+Allow the microphone on first launch so spoken check-ins can hear "I'm fine" and roast replies. Logs: `adb logcat -s Presage Voice`.
 
 ## Not done yet
 
-- Presage on a real face: `SmartSpectraPresageSource` compiles but is untested on a device. The SDK gives pulse, breathing, blinks and expression scores only; yawn, nod, gaze and eye-closure ratio stay unset.
+- Presage on a real face is unverified on a device. Eye closure and yawns come from the SDK's face landmarks (`core/FaceGeometry.kt`, assumes the MediaPipe 478-point layout); nod and gaze stay unset.
 - `alarm.wav` is a generated placeholder tone.
-- Stretch items (report card, weather) and instrumented/UI tests.
-- Not run on a device or emulator; only compiled.
+- Weather and instrumented/UI tests.
+- Voice playback and replies are built but not yet verified on a device.

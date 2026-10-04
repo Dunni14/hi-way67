@@ -50,16 +50,21 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun Root() {
         val needed = arrayOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION)
+        // The mic is optional: without it the app still speaks, it just can't hear replies.
+        val requested = needed + Manifest.permission.RECORD_AUDIO
         fun granted() = needed.all { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }
         var ok by remember { mutableStateOf(granted()) }
         var asked by remember { mutableStateOf(false) }
         val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { ok = granted() }
-        LaunchedEffect(Unit) { if (!ok && !asked) { asked = true; launcher.launch(needed) } }
+        LaunchedEffect(Unit) {
+            val micMissing = ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
+            if ((!ok || micMissing) && !asked) { asked = true; launcher.launch(requested) }
+        }
 
         if (!ok) {
             Column(Modifier.fillMaxSize().padding(24.dp)) {
-                Text("Driver Guardian needs the camera (to watch for drowsiness) and location (speed). Grant them while parked.")
-                Button(onClick = { launcher.launch(needed) }) { Text("Grant permissions") }
+                Text("Driver Guardian needs the camera (to watch for drowsiness) and location (speed), and the microphone to hear your replies. Grant them while parked.")
+                Button(onClick = { launcher.launch(requested) }) { Text("Grant permissions") }
             }
             return
         }

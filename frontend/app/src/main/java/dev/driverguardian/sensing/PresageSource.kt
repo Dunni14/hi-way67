@@ -1,36 +1,54 @@
 package dev.driverguardian.sensing
 
 import android.content.Context
+import android.util.Log
 import androidx.camera.core.Preview
 import androidx.lifecycle.Observer
 import com.presagetech.smartspectra.CameraSelection
+import com.presagetech.smartspectra.ProcessingStatus
 import com.presagetech.smartspectra.SmartSpectraConfig
+import com.presagetech.smartspectra.SmartSpectraError
 import com.presagetech.smartspectra.SmartSpectraException
 import com.presagetech.smartspectra.SmartSpectraSdk
 import com.presagetech.smartspectra.ValidationCode
+import com.presagetech.smartspectra.ValidationStatus
 import com.presagetech.smartspectra.proto.MetricsProto
 import dev.driverguardian.BuildConfig
 import dg.core.DemoScript
+import dg.core.FaceGeometry
 import dg.core.PresageFrame
+import dg.core.RealClock
+import dg.core.TripClock
+import dg.core.Pt
+import dg.core.YawnDetector
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** ~1 Hz driver signals. [SmartSpectraPresageSource] wraps the Presage SmartSpectra SDK. */
 interface PresageSource {
     fun frames(tripStartMs: Long): Flow<PresageFrame>
 }
 
-/** Replays [DemoScript] so the pipeline and the demo run without the SDK or a face. */
-class FakePresageSource : PresageSource {
+/**
+ * Replays [DemoScript] so the pipeline and the demo run without the SDK or a face. Emits one frame
+ * per second of script time, paced in real time by [clock] and stamped with script time.
+ */
+class FakePresageSource(private val clock: TripClock = RealClock) : PresageSource {
     override fun frames(tripStartMs: Long): Flow<PresageFrame> = flow {
+        var scriptMs = 0L
         while (true) {
-            val now = System.currentTimeMillis()
-            emit(DemoScript.frame(now, (now - tripStartMs) / 1000.0))
-            delay(1000)
+            scriptMs += 1000
+            val wait = tripStartMs + clock.realMs(scriptMs) - System.currentTimeMillis()
+            if (wait > 0) delay(wait)
+            emit(DemoScript.frame(tripStartMs + scriptMs, scriptMs / 1000.0))
         }
     }
 }
@@ -45,15 +63,18 @@ object PresagePreview {
 
 /**
  * Real Presage source (SDK usage mirrors the standalone demo in `../android`). Emits one frame per
- * second built from the latest SDK metrics. The SDK exposes pulse, breathing, blinks and expression
- * scores; it has no eye-closure ratio, yawn, nod or gaze output, so those stay at their defaults and
- * the risk model leans on blinks, vitals and the phone's IMU instead.
+ * second built from the latest SDK metrics: pulse, breathing, blinks and expression scores from the
+ * SDK, plus eye closure and yawns derived from its face landmarks ([FaceGeometry]). Nod and gaze
+ * stay at their defaults.
  */
 class SmartSpectraPresageSource(private val context: Context) : PresageSource {
     override fun frames(tripStartMs: Long): Flow<PresageFrame> = flow {
+        // The dashcam view hands over its preview surface; give it a moment so the SDK has somewhere to draw.
+        val surface = withTimeoutOrNull(3_000) { PresagePreview.surface.first { it != null } }
+        if (surface == null) Log.w(TAG, "no preview surface; running without preview")
         val config = SmartSpectraConfig().apply {
             apiKey = BuildConfig.PRESAGE_API_KEY
-            PresagePreview.surface.value?.let { previewSurfaceProvider = it }
+            surface?.let { previewSurfaceProvider = it }
             // SDK default is breathing only; everything else has to be requested.
             requestedMetrics = SmartSpectraConfig.cardioMetrics +
                 SmartSpectraConfig.breathingMetrics +
@@ -65,38 +86,73 @@ class SmartSpectraPresageSource(private val context: Context) : PresageSource {
         var metrics: MetricsProto.Metrics? = null
         var valid = false
         var blinkSinceMs: Long? = null
+        val yawns = YawnDetector()
         val metricsObs = Observer<MetricsProto.Metrics?> { metrics = it }
-        val validationObs = Observer<com.presagetech.smartspectra.ValidationStatus?> { it?.let { s -> valid = s.code == ValidationCode.OK } }
+        val validationObs = Observer<ValidationStatus?> { s ->
+            s ?: return@Observer
+            if ((s.code == ValidationCode.OK) != valid) Log.d(TAG, "validation ${s.code} ${s.hint}")
+            valid = s.code == ValidationCode.OK
+        }
+        val statusObs = Observer<ProcessingStatus?> { Log.d(TAG, "processing $it") }
+        val errorObs = Observer<SmartSpectraError?> { e -> e?.let { Log.e(TAG, "error ${it.code}: ${it.message}") } }
         sdk.metrics.observeForever(metricsObs)
         sdk.validationStatus.observeForever(validationObs)
+        sdk.processingStatus.observeForever(statusObs)
+        sdk.error.observeForever(errorObs)
         try {
-            try { sdk.start() } catch (e: SmartSpectraException) { android.util.Log.e("Presage", "start failed ${e.error.code}: ${e.error.message}"); return@flow }
-            while (true) {
-                delay(1000)
-                val now = System.currentTimeMillis()
-                val m = metrics
-                val pulse = m?.cardio?.pulseRateList?.lastOrNull()
-                val rate = m?.breathing?.rateList?.lastOrNull()
-                val blinking = m?.face?.blinkingList?.lastOrNull()?.detected == true
-                if (blinking) { if (blinkSinceMs == null) blinkSinceMs = now } else blinkSinceMs = null
-                val scores = m?.face?.expressionList?.lastOrNull()?.scoresList.orEmpty()
-                fun score(t: MetricsProto.ExpressionType) = scores.firstOrNull { it.type == t }?.confidence?.toDouble() ?: 0.0
-                emit(PresageFrame(
-                    tsMs = now,
-                    confidence = if (valid && m != null) (pulse?.confidence?.toDouble() ?: 1.0) else 0.0,
-                    eyeClosed = if (m?.face?.blinkingCount?.let { it > 0 } == true) (if (blinking) 1.0 else 0.0) else null,
-                    longBlink = blinkSinceMs?.let { now - it >= LONG_BLINK_MS } == true,
-                    heartRate = pulse?.value?.toDouble(),
-                    breathing = rate?.value?.toDouble(),
-                    stress = if (scores.isEmpty()) null else maxOf(score(MetricsProto.ExpressionType.ANGRY), score(MetricsProto.ExpressionType.FEAR), score(MetricsProto.ExpressionType.DISGUST)),
-                ))
+            coroutineScope {
+                // Like Presage's samples: start in its own coroutine so the 1 Hz loop runs either way.
+                launch {
+                    try { sdk.start() } catch (e: SmartSpectraException) { Log.e(TAG, "start failed ${e.error.code}: ${e.error.message}") }
+                }
+                while (true) {
+                    delay(1000)
+                    val now = System.currentTimeMillis()
+                    val m = metrics
+                    val face = m?.takeIf { it.hasFace() }?.face
+                    val pulse = m?.cardio?.pulseRateList?.lastOrNull()
+                    val rate = m?.breathing?.rateList?.lastOrNull()
+                    val blinking = face?.blinkingList?.lastOrNull()?.detected == true
+                    if (blinking) { if (blinkSinceMs == null) blinkSinceMs = now } else blinkSinceMs = null
+                    val scores = face?.expressionList?.lastOrNull()?.scoresList.orEmpty()
+                    fun score(t: MetricsProto.ExpressionType) = scores.firstOrNull { it.type == t }?.confidence?.toDouble() ?: 0.0
+
+                    val points = face?.landmarksList?.lastOrNull()?.valueList?.map { Pt(it.x.toDouble(), it.y.toDouble()) }.orEmpty()
+                    val ear = FaceGeometry.eyeOpenness(points)
+                    val mar = FaceGeometry.mouthOpenness(points)
+                    val eyeClosed = when {
+                        ear != null -> maxOf(FaceGeometry.eyeClosure(ear), if (blinking) 1.0 else 0.0)
+                        face != null && face.blinkingCount > 0 -> if (blinking) 1.0 else 0.0
+                        else -> null
+                    }
+                    val yawn = yawns.update(now, mar)
+                    if (yawn) Log.d(TAG, "yawn (mouth %.2f)".format(mar))
+
+                    emit(PresageFrame(
+                        tsMs = now,
+                        // Face visibility comes from the SDK's validation, not from pulse quality.
+                        confidence = if (valid && m != null) 1.0 else 0.0,
+                        eyeClosed = eyeClosed,
+                        longBlink = blinkSinceMs?.let { now - it >= LONG_BLINK_MS } == true,
+                        yawn = yawn,
+                        heartRate = pulse?.takeIf { it.confidence.toDouble() >= MIN_PULSE_CONFIDENCE }?.value?.toDouble(),
+                        breathing = rate?.value?.toDouble(),
+                        stress = if (scores.isEmpty()) null else maxOf(score(MetricsProto.ExpressionType.ANGRY), score(MetricsProto.ExpressionType.FEAR), score(MetricsProto.ExpressionType.DISGUST)),
+                    ))
+                }
             }
         } finally {
             sdk.metrics.removeObserver(metricsObs)
             sdk.validationStatus.removeObserver(validationObs)
+            sdk.processingStatus.removeObserver(statusObs)
+            sdk.error.removeObserver(errorObs)
             withContext(NonCancellable) { sdk.stop() }
         }
     }
 
-    private companion object { const val LONG_BLINK_MS = 500L }
+    private companion object {
+        const val TAG = "Presage"
+        const val LONG_BLINK_MS = 500L
+        const val MIN_PULSE_CONFIDENCE = 0.5
+    }
 }
