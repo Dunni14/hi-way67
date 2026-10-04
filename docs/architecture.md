@@ -3,7 +3,7 @@
 ## Components
 
 ```
-┌──────────────── Android app (NOT STARTED) ────────────────┐
+┌──────────────── Android app (PROTOTYPE) ──────────────────┐
 │ Front camera → Presage → features → risk score → tree     │
 │ GPS / IMU → speed, hard brake, swerve                     │
 │ Audio playback · speech recognition · maps intent         │
@@ -23,7 +23,7 @@
                                                           (Telegram optional)
 ```
 
-- **Android app.** Not in the repo. It is meant to own sensing, scoring and the timing half of the decision tree. Spec: [phone-app.md](phone-app.md).
+- **Android app** (`android/`). Today it runs Presage with a debug overlay (heart rate, blinks, expression, face mesh); the WebSocket link is not built yet. It is meant to own sensing, scoring and the timing half of the decision tree. Spec: [phone-app.md](phone-app.md).
 - **Backend.** One Node process. It holds trip state, talks to the phone over a WebSocket, talks to the family chat through Spectrum, and makes every third-party API call. API keys never reach the phone.
 
 ## Backend boot sequence
