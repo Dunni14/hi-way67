@@ -9,6 +9,7 @@ Technical documentation for the code in this repository. The product pitch, trac
 | Page | What it covers |
 |---|---|
 | [status.md](status.md) | Feature-by-feature implementation status against the root README, plus known issues |
+| [challenges.md](challenges.md) | Problems we ran into building it, how we handled them, and what is still open |
 | [architecture.md](architecture.md) | Components, data flow, who owns which part of the decision tree |
 | [backend.md](backend.md) | Setup, environment variables, scripts, module reference |
 | [protocol.md](protocol.md) | Phone ↔ backend WebSocket contract, with example frames and sequences |
