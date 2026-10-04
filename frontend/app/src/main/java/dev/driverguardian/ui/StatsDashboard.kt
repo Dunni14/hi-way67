@@ -60,6 +60,7 @@ fun StatsDashboard(api: HistoryApi, driverHint: String, onOpenLastReport: (() ->
     var stats by remember { mutableStateOf<DriverStats?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var reload by remember { mutableIntStateOf(0) }
+    var loading by remember { mutableStateOf(true) }
 
     if (page == "history") {
         TripHistoryScreen(api, driverHint, onOpenLastReport, onBack = { page = "dash" })
@@ -68,10 +69,12 @@ fun StatsDashboard(api: HistoryApi, driverHint: String, onOpenLastReport: (() ->
 
     LaunchedEffect(reload) {
         error = null
+        loading = true
         runCatching {
             val name = api.driverName() ?: driverHint.ifBlank { null } ?: error("no driver name")
             api.stats(name)
         }.onSuccess { stats = it }.onFailure { error = it.message ?: "couldn't reach the backend" }
+        loading = false
     }
 
     Column(
@@ -82,7 +85,7 @@ fun StatsDashboard(api: HistoryApi, driverHint: String, onOpenLastReport: (() ->
         val s = stats
         when {
             error != null -> Section { Text("Couldn't load stats: $error. Is the backend running and the host in Settings right?", color = SystemText, fontSize = 14.sp) }
-            s == null -> Text("Loading…", color = Muted, fontSize = 14.sp, modifier = Modifier.padding(4.dp))
+            s == null -> Throbber("Loading this week's stats")
             else -> {
                 ScoreCard(s)
                 Section("Weekly trends", "Safety score (last ${s.days} days)") { WeekChart(s.daily) }
@@ -118,7 +121,7 @@ fun StatsDashboard(api: HistoryApi, driverHint: String, onOpenLastReport: (() ->
         }
         NavRow(Icons.Rounded.History, "Trip history", "Every stored trip and its report card") { page = "history" }
         onOpenLastReport?.let { NavRow(Icons.Rounded.Description, "Last trip's report card", "The card shown when your last trip ended", it) }
-        TextButton(onClick = { reload++ }, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Refresh", color = Main, fontWeight = FontWeight.SemiBold) }
+        BusyTextButton("Refresh", busy = loading && stats != null, modifier = Modifier.align(Alignment.CenterHorizontally)) { reload++ }
     }
 }
 

@@ -2,11 +2,18 @@ package dev.driverguardian.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -16,6 +23,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
@@ -64,5 +72,35 @@ internal fun IconBadge(icon: ImageVector, tint: Color = Main, bg: Color = Presse
 internal fun IconBadge(icon: Painter, tint: Color = Main, bg: Color = Pressed, size: Dp = 44.dp) {
     Box(Modifier.size(size).clip(CircleShape).background(bg), contentAlignment = Alignment.Center) {
         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(size * 0.5f))
+    }
+}
+
+/** Loading state for a screen or list: the blue spinner on a white card, with what is loading. */
+@Composable
+internal fun Throbber(label: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier.fillMaxWidth().card().padding(vertical = 28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        CircularProgressIndicator(color = Main, trackColor = Pressed, strokeWidth = 4.dp, strokeCap = StrokeCap.Round, modifier = Modifier.size(36.dp))
+        Text(label, color = Muted, fontSize = 14.sp)
+    }
+}
+
+/** Inline spinner for buttons and pills. */
+@Composable
+internal fun SmallThrobber(color: Color = Main, size: Dp = 16.dp) {
+    CircularProgressIndicator(color = color, strokeWidth = 2.dp, strokeCap = StrokeCap.Round, modifier = Modifier.size(size))
+}
+
+/** Text button that swaps its label for a spinner while [busy], e.g. Refresh during a reload. */
+@Composable
+internal fun BusyTextButton(text: String, busy: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    TextButton(onClick = onClick, enabled = !busy, modifier = modifier) {
+        Box(contentAlignment = Alignment.Center) {
+            // The invisible label keeps the button the same width while the spinner shows.
+            Text(text, color = if (busy) Color.Transparent else Main, fontWeight = FontWeight.SemiBold)
+            if (busy) SmallThrobber()
+        }
     }
 }

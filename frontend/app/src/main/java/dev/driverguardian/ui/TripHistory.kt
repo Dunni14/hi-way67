@@ -61,14 +61,17 @@ fun TripHistoryScreen(api: HistoryApi, driverHint: String, onOpenLastReport: (()
     var error by remember { mutableStateOf<String?>(null) }
     var open by remember { mutableStateOf<TripRow?>(null) }
     var reload by remember { mutableIntStateOf(0) }
+    var loading by remember { mutableStateOf(true) }
 
     LaunchedEffect(reload) {
         error = null
+        loading = true
         runCatching {
             val name = api.driverName() ?: driverHint.ifBlank { null } ?: error("no driver name")
             driver = name
             api.trips(name)
         }.onSuccess { trips = it }.onFailure { error = it.message ?: "couldn't reach the backend" }
+        loading = false
     }
 
     open?.let { row -> TripDetailScreen(api, row) { open = null }; return }
@@ -81,7 +84,7 @@ fun TripHistoryScreen(api: HistoryApi, driverHint: String, onOpenLastReport: (()
                 Text("Trip history", style = ScreenTitle)
                 Text(if (driver.isBlank()) "Stored on Tiger Data" else "$driver · stored on Tiger Data", color = SystemText, style = Label)
             }
-            TextButton(onClick = { reload++ }) { Text("Refresh", color = Main) }
+            BusyTextButton("Refresh", busy = loading && trips != null) { reload++ }
         }
         onOpenLastReport?.let { openLast ->
             Card(Modifier.clickable { openLast() }) {
@@ -93,7 +96,7 @@ fun TripHistoryScreen(api: HistoryApi, driverHint: String, onOpenLastReport: (()
         }
         when {
             error != null -> Card { Text("Couldn't load trips: $error. Is the backend running and the host in Settings right?", color = SystemText, fontSize = 14.sp) }
-            trips == null -> Text("Loading…", color = SystemText, fontSize = 14.sp)
+            trips == null -> Throbber("Loading trips")
             trips!!.isEmpty() -> Card { Text("No trips stored for $driver yet. Start one on the Drive tab.", color = SystemText, fontSize = 14.sp) }
             else -> trips!!.forEach { t -> TripRowCard(t) { open = t } }
         }
@@ -134,7 +137,7 @@ fun TripDetailScreen(api: HistoryApi, row: TripRow, onBack: () -> Unit) {
         val c = card
         when {
             error != null -> Card { Text("Couldn't load this trip: $error", color = SystemText, fontSize = 14.sp) }
-            c == null -> Text("Loading…", color = SystemText, fontSize = 14.sp)
+            c == null -> Throbber("Loading report card")
             else -> {
                 Card {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {

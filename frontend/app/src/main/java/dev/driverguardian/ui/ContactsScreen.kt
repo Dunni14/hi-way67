@@ -112,8 +112,9 @@ fun ContactsScreen(
             contentPadding = PaddingValues(bottom = 12.dp),
         ) {
             when {
+                conn == Conn.CONNECTING && !state.loaded -> item { Throbber("Connecting to the backend") }
                 conn != Conn.CONNECTED && !state.loaded -> item { Note("Not connected to the backend. Check the host under Settings.") }
-                !state.loaded -> item { Note("Loading…") }
+                !state.loaded -> item { Throbber("Loading contacts") }
                 state.list.isEmpty() -> item { Note("No contacts yet. Tap + to invite someone on Telegram.") }
                 shown.isEmpty() -> item { Note("No contact matches \"$query\".") }
             }
@@ -231,7 +232,11 @@ private fun AddContactDialog(state: ContactsState, onCreate: (String, Boolean) -
         confirmButton = {
             if (invite == null) {
                 TextButton(onClick = { onCreate(name, guardian) }, enabled = name.isNotBlank() && !state.inviting) {
-                    Text(if (state.inviting) "Creating…" else "Create invite")
+                    if (state.inviting) {
+                        SmallThrobber()
+                        Spacer(Modifier.width(8.dp))
+                        Text("Creating invite")
+                    } else Text("Create invite")
                 }
             } else {
                 TextButton(onClick = {

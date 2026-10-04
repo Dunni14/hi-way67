@@ -34,6 +34,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
@@ -233,7 +234,8 @@ private fun StatusTile(t: Tile, modifier: Modifier) {
 
 /**
  * Top pill (Figma): the driver's avatar overlapping a white pill that says what the app is doing, most
- * urgent first. The avatar ring is the backend connection: green connected, yellow connecting, red down.
+ * urgent first. The avatar ring is the backend connection: green connected, a spinning yellow arc while
+ * connecting, red down. Calibration shows a spinner in the pill until the baseline is set.
  */
 @Composable
 private fun StatusPill(ui: UiState, conn: Conn, voice: VoicePlayer.State, driverName: String, modifier: Modifier) {
@@ -248,19 +250,29 @@ private fun StatusPill(ui: UiState, conn: Conn, voice: VoicePlayer.State, driver
         yawnFlash -> "Yawn detected" to Color(0xFFFDD835)
         else -> "Driving • Monitoring" to TabBg
     }
-    val ring = when (conn) { Conn.CONNECTED -> Good; Conn.CONNECTING -> Color(0xFFFDD835); else -> Bad }
+    val connecting = conn == Conn.CONNECTING
+    val ring = when (conn) { Conn.CONNECTED -> Good; Conn.CONNECTING -> Color(0xFFFFF3C4); else -> Bad }
     Box(modifier.height(44.dp), contentAlignment = Alignment.CenterStart) {
-        Box(
+        Row(
             Modifier.padding(start = 22.dp).height(34.dp).widthIn(min = 210.dp).card(RoundedCornerShape(50), bg, 4.dp)
                 .padding(start = 32.dp, end = 18.dp),
-            contentAlignment = Alignment.Center,
-        ) { Text(text, color = if (bg == Bad) Surface else SystemText, style = Label) }
-        Box(
-            Modifier.size(44.dp).shadow(6.dp, CircleShape).clip(CircleShape).background(ring).padding(3.dp)
-                .clip(CircleShape).background(Main),
-            contentAlignment = Alignment.Center,
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
         ) {
-            Text(driverName.trim().take(1).uppercase().ifEmpty { "•" }, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+            if (ui.running && ui.calibrating && bg == TabBg) {
+                SmallThrobber(SystemText, 12.dp)
+                Spacer(Modifier.width(8.dp))
+            }
+            Text(text, color = if (bg == Bad) Surface else SystemText, style = Label)
+        }
+        Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier.fillMaxSize().shadow(6.dp, CircleShape).clip(CircleShape).background(ring).padding(3.dp)
+                    .clip(CircleShape).background(Main),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(driverName.trim().take(1).uppercase().ifEmpty { "•" }, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+            }
+            if (connecting) CircularProgressIndicator(color = Color(0xFFFDD835), strokeWidth = 3.dp, strokeCap = StrokeCap.Round, modifier = Modifier.fillMaxSize())
         }
     }
 }
