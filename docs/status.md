@@ -131,4 +131,4 @@ These come from reading the code. None of them break the type check (`npm run ty
 7. **`/start` is not allowlisted.** Any member of any group can bind the agent's group chat with `/start`.
 8. **No auth on the WebSocket.** Anyone who can reach the port can connect as the phone, and a new connection replaces the current one.
 9. **Unused state.** `driverQueue.lastContext` is written but never read.
-10. **Stale scaffolding.** `backend/AGENTS.md` still describes the Spectrum template's "echo loop", and the example allowlist is named `contacts.example copy.json` instead of `contacts.example.json`.
+10. **Odd example filename.** The example allowlist is named `contacts.example copy.json` instead of `contacts.example.json`.

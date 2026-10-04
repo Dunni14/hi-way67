@@ -1,47 +1,62 @@
-# mhacks-auto-ai — agent instructions
+# Driver Guardian backend: agent instructions
 
-This is a [Spectrum](https://photon.codes/docs/spectrum-ts) app, pinned to `spectrum-ts@^12.10.1`. The entry point is `src/index.ts`, which configures the telegram provider(s) and runs the echo loop.
+Node / TypeScript backend for Driver Guardian (MHacks 26). It talks to the Android app over a WebSocket, runs an iMessage agent through [Photon Spectrum](https://photon.codes/docs/spectrum-ts) (`spectrum-ts@^12.10.1`), and makes the ElevenLabs and OpenRouter calls. Full docs live in [`../docs/`](../docs/README.md). Read [`../docs/status.md`](../docs/status.md) before claiming something is implemented.
 
-## Working in this project
+## Layout
 
-- Run the app with `npm run start`.
-- Add providers by importing them in `src/index.ts` and listing them in the `Spectrum({ providers: [...] })` config.
-- Outgoing message content uses the builders documented in the skill (text, attachment, voice, contact, richlink, poll, group, custom).
+- `src/index.ts`: boot (store → orchestrator → WebSocket server → Spectrum).
+- `src/orchestrator.ts`: all routing between phone frames, chat messages, voice and posts. Most behavior changes start here.
+- `src/ws/protocol.ts`: **source of truth** for the phone protocol. If you change it, update `PROTOCOL.md` and `../docs/protocol.md` in the same change.
+- `src/agent/`: Spectrum connection (`spectrum.ts`), classifier, answers, roast, contacts allowlist, driver intent regexes.
+- `src/voice/`: ElevenLabs TTS, the one-at-a-time driver speech queue, spoken line templates.
+- `src/trip/`: live trip state, and the `TripStore` interface. The only implementation is in-memory; Tiger Data is a TODO.
+- `src/llm/openrouter.ts`: LLM client. Every LLM call has a non-LLM fallback. Keep it that way so the demo never stalls.
+- `src/dev/`: `fakePhone.ts` (simulates the Android app) and `smokeTts.ts`.
 
-## Environment
+There is no Android code in this repo. Risk scoring, the decision tree's timing (hold and cooldown) and Presage all belong to the phone. The backend trusts `R` and `tier` from the phone and does not compute risk.
 
-This project reads secrets from `.env` (gitignored). **Do not read, write, or echo `.env`** — it contains credentials.
+## Commands
 
-If startup fails with an authentication error, tell the user to verify their `PROJECT_ID` / `PROJECT_SECRET` at the [Photon dashboard](https://app.photon.codes).
+- `npm run dev`: start with watch. `npm run start` starts without it.
+- `NO_SPECTRUM=1 npm run dev`: phone side only, no iMessage.
+- `npm run fake-phone` runs the scripted demo. Add `-- -i` for interactive mode (`win`, `alert`, `say`, …; see `../docs/backend.md`).
+- `npm run smoke:tts`: writes one mp3 per voice tier to `out/`.
+- `npm run typecheck`: run this after every change. There is no test suite.
+
+TypeScript runs straight from source with `tsx`, so there is no build step. Imports use explicit `.ts` extensions (`verbatimModuleSyntax`, `allowImportingTsExtensions`). `noUncheckedIndexedAccess` is on.
+
+## Conventions
+
+- Alert lines are templates in `voice/lines.ts`, not LLM output, so they are instant and predictable.
+- Anything spoken to the driver goes through `driverQueue.enqueue()`. Never send `speak` directly.
+- Never send location to friends: `answer.ts` filters facts by role before the LLM sees them, and guardian alerts use `post(text, "guardian")`.
+- Mid-tier (40/70) events are voice only. Never post them to the group chat.
+- Commits use Conventional Commits (`feat(backend): …`, `fix: …`, `docs: …`).
+- Always update the docs when introducing new features, or changing conventions.
+
+## Environment and secrets
+
+Secrets live in `.env` and the contact allowlist in `contacts.json`, both gitignored. **Do not read, write, or echo `.env` or `contacts.json`.** They contain credentials and real phone numbers. Use `.env.example` and `contacts.example copy.json` for reference.
+
+If startup fails with a Spectrum authentication error, tell the user to check `SPECTRUM_PROJECT_ID` / `SPECTRUM_PROJECT_SECRET` (`PROJECT_ID` / `PROJECT_SECRET` also work) at the [Photon dashboard](https://app.photon.codes).
 
 ## Spectrum SDK reference
 
-This project includes the `spectrum` skill from [`photon-hq/skills`](https://github.com/photon-hq/skills). Your agent should auto-discover it. If it doesn't, or if you switch agents, install for your agent with:
+Use the `spectrum` skill from [`photon-hq/skills`](https://github.com/photon-hq/skills) for SDK details (message content builders, spaces, providers). If your agent doesn't auto-discover it:
 
 ```sh
 npx skills add photon-hq/skills --skill spectrum --agent <your-agent>
 ```
 
-(Use `--agent '*'` to install for all supported agents.)
-
-## Managing the Spectrum Cloud project (CLI)
-
-If this app uses a platform provider, the `PROJECT_ID` / `PROJECT_SECRET` in `.env` belong to a **Spectrum Cloud** project. To manage that project from the terminal — authenticate, rotate the secret, list the line(s) you send from, manage platforms/users, or create more projects — use the `photon-cli` skill (the `photon` CLI) from [`photon-hq/skills`](https://github.com/photon-hq/skills):
+To manage the Spectrum Cloud project (auth, secret rotation, lines), use the `photon-cli` skill:
 
 ```sh
 npx skills add photon-hq/skills --skill photon-cli --agent <your-agent>
 ```
 
-(Use `--agent '*'` to install for all supported agents.)
+- `photon whoami`: check you're authenticated (`photon login` if not).
+- `photon projects regenerate-secret`: rotate the secret, then update `.env`.
+- `photon spectrum lines list`: list the lines the app sends from.
+- `photon projects show`: inspect the active project.
 
-Common tasks once it's installed:
-
-- `photon whoami` — confirm you're authenticated (run `photon login` if not).
-- `photon projects regenerate-secret` — rotate the Spectrum API secret (then update `PROJECT_SECRET` in `.env`).
-- `photon spectrum lines list` — see the line(s) your app sends from.
-- `photon projects show` — inspect the active project (set `PHOTON_PROJECT_ID`, or pass `--project <id>`).
-
-## See also
-
-- [Spectrum docs](https://photon.codes/docs/spectrum-ts)
-- [`spectrum-ts` on GitHub](https://github.com/photon-hq/spectrum-ts)
+Use `--agent '*'` to install a skill for every supported agent.
