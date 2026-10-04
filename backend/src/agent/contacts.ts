@@ -1,11 +1,14 @@
 // Allowlist of people the agent talks to. contacts.json (gitignored):
-//   [{ "handle": "+15551234567", "name": "Mom", "role": "guardian" }, ...]
-// handle = phone in E.164 or iMessage email, i.e. what Spectrum reports as sender.id.
+//   [{ "handle": "+15551234567", "name": "Mom", "role": "guardian" },
+//    { "handle": "123456789", "name": "Sam", "role": "friend", "platform": "telegram" }, ...]
+// handle = what Spectrum reports as sender.id: phone in E.164 or iMessage email,
+// or the numeric user id on Telegram (the backend logs it for unknown senders).
 import { existsSync, readFileSync } from "node:fs";
 import { config } from "../config.ts";
 
 export type Role = "guardian" | "friend";
-export type Contact = { handle: string; name: string; role: Role };
+export type Platform = "imessage" | "telegram";
+export type Contact = { handle: string; name: string; role: Role; platform?: Platform };
 
 export function normalizeHandle(handle: string) {
   const h = handle.trim().toLowerCase();
@@ -25,11 +28,15 @@ function load(): Contact[] | null {
 
 const contacts = load();
 
-export function lookupContact(senderId: string | undefined): Contact | null {
+export function lookupContact(senderId: string | undefined, platform?: Platform): Contact | null {
   if (!senderId) return null;
   const handle = normalizeHandle(senderId);
-  if (contacts === null) return { handle, name: senderId, role: "guardian" };
+  if (contacts === null) return { handle, name: senderId, role: "guardian", platform };
   return contacts.find((c) => c.handle === handle) ?? null;
+}
+
+export function contactPlatform(c: Contact): Platform {
+  return c.platform ?? "imessage";
 }
 
 export function allContacts(): Contact[] {

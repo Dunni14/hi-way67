@@ -17,7 +17,7 @@ data class AppSettings(
     val kidsInCar: Boolean = false,
     val driverName: String = "",
     val host: String = BuildConfig.BACKEND_HOST,
-    /** Replay scripted Presage signals (the real Presage SDK is not wired in yet). */
+    /** Replay scripted Presage signals at a fake 65 mph instead of using the camera, GPS and IMU. */
     val demoMode: Boolean = true,
 )
 

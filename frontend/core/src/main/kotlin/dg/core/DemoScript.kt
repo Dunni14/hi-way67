@@ -29,3 +29,43 @@ object DemoScript {
         )
     }
 }
+
+/**
+ * Maps real time since trip start to trip-engine time ("script time"). The engine, its gate and the
+ * fake Presage source all run on script time; the backend and report card get real timestamps.
+ */
+interface TripClock {
+    fun scriptMs(realElapsedMs: Long): Long
+    fun realMs(scriptMs: Long): Long
+    /** Script ms per real ms after the opening phase; scales real-time cooldowns into script time. */
+    val steadyRate: Double
+}
+
+object RealClock : TripClock {
+    override fun scriptMs(realElapsedMs: Long) = realElapsedMs
+    override fun realMs(scriptMs: Long) = scriptMs
+    override val steadyRate = 1.0
+}
+
+/**
+ * Demo pacing: race through calibration and the quiet start at [FAST_RATE], then slow to
+ * [SLOW_RATE] from the first alert on, so the driver has time to answer each spoken check-in.
+ * With [DemoScript]'s 40 / 70 / 85 at 180 / 220 / 280 s of script time, that's about
+ * 0:15 / 0:42 / 1:22 real time. Use [RealClock] for the original 3:00 / 3:40 / 4:40.
+ */
+object DemoClock : TripClock {
+    const val FAST_RATE = 12.0
+    const val FAST_UNTIL_MS = 180_000L // script time of the first alert (tier 40)
+    const val SLOW_RATE = 1.5
+    private val fastRealMs = (FAST_UNTIL_MS / FAST_RATE).toLong() // 15 s
+
+    override fun scriptMs(realElapsedMs: Long): Long =
+        if (realElapsedMs <= fastRealMs) (realElapsedMs * FAST_RATE).toLong()
+        else FAST_UNTIL_MS + ((realElapsedMs - fastRealMs) * SLOW_RATE).toLong()
+
+    override fun realMs(scriptMs: Long): Long =
+        if (scriptMs <= FAST_UNTIL_MS) (scriptMs / FAST_RATE).toLong()
+        else fastRealMs + ((scriptMs - FAST_UNTIL_MS) / SLOW_RATE).toLong()
+
+    override val steadyRate = SLOW_RATE
+}

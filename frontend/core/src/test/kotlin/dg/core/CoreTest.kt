@@ -83,14 +83,125 @@ class CoreTest {
             encodeFrame(PhoneFrame.Alert(70, Dominant.RECKLESS, 72.0)))
         assertEquals("""{"type":"trip_start"}""", encodeFrame(PhoneFrame.TripStart))
         assertTrue(encodeFrame(PhoneFrame.RiskWindow(1, 2.0, 3.0, 4.0)).contains(""""R":2.0"""))
-        assertEquals(BackendFrame.Speak, decodeBackendFrame("""{"type":"speak","id":"1","x":1}"""))
         assertEquals(BackendFrame.Dismissed, decodeBackendFrame("""{"type":"dismissed"}"""))
         assertEquals(BackendFrame.Navigate("rest stop"), decodeBackendFrame("""{"type":"navigate","query":"rest stop"}"""))
+    }
+
+    @Test fun voiceFramesMatchProtocol() {
+        assertEquals(
+            BackendFrame.Speak("1", "Hey there", 40, "AAAA", 5000, SpeakContext.CHECKIN),
+            decodeBackendFrame("""{"type":"speak","id":"1","text":"Hey there","tier":40,"audio":"AAAA","listenAfterMs":5000,"context":"checkin","x":1}"""),
+        )
+        assertEquals(BackendFrame.Unknown("speak"), decodeBackendFrame("""{"type":"speak"}"""))
+        assertEquals("""{"type":"speak_done","id":"1"}""", encodeFrame(PhoneFrame.SpeakDone("1")))
+        assertEquals("""{"type":"utterance","text":"I'm fine","context":"checkin"}""",
+            encodeFrame(PhoneFrame.Utterance("I'm fine", SpeakContext.CHECKIN)))
+        assertEquals("""{"type":"utterance","text":"hi","context":"free"}""", encodeFrame(PhoneFrame.Utterance("hi")))
+    }
+
+    /** Synthetic 478-point mesh: eyes with the given lid gap (width 10), mouth with the given lip gap (width 10). */
+    private fun mesh(eyeGap: Double, lipGap: Double): List<Pt> {
+        val p = MutableList(478) { Pt(0.0, 0.0) }
+        for ((dx, eye) in listOf(0.0 to intArrayOf(33, 160, 158, 133, 153, 144), 20.0 to intArrayOf(362, 385, 387, 263, 373, 380))) {
+            p[eye[0]] = Pt(dx, 0.0); p[eye[3]] = Pt(dx + 10, 0.0)
+            p[eye[1]] = Pt(dx + 3, -eyeGap / 2); p[eye[2]] = Pt(dx + 7, -eyeGap / 2)
+            p[eye[5]] = Pt(dx + 3, eyeGap / 2); p[eye[4]] = Pt(dx + 7, eyeGap / 2)
+        }
+        p[78] = Pt(5.0, 20.0); p[308] = Pt(15.0, 20.0)
+        p[13] = Pt(10.0, 20.0 - lipGap / 2); p[14] = Pt(10.0, 20.0 + lipGap / 2)
+        return p
+    }
+
+    @Test fun faceGeometryRatios() {
+        val open = mesh(eyeGap = 3.0, lipGap = 0.5)
+        assertEquals(0.3, FaceGeometry.eyeOpenness(open)!!, 1e-9)
+        assertEquals(0.0, FaceGeometry.eyeClosure(FaceGeometry.eyeOpenness(open)!!))
+        assertEquals(1.0, FaceGeometry.eyeClosure(FaceGeometry.eyeOpenness(mesh(1.0, 0.5))!!))
+        assertEquals(0.05, FaceGeometry.mouthOpenness(open)!!, 1e-9)
+        assertEquals(0.7, FaceGeometry.mouthOpenness(mesh(3.0, 7.0))!!, 1e-9)
+        assertNull(FaceGeometry.eyeOpenness(open.take(100)))
+    }
+
+    @Test fun yawnNeedsSustainedOpenMouthAndRefractory() {
+        val y = YawnDetector()
+        assertFalse(y.update(0, 0.7))
+        assertFalse(y.update(1_000, 0.7)) // only 1 s open
+        assertTrue(y.update(1_500, 0.7)) // 1.5 s -> yawn
+        assertFalse(y.update(3_500, 0.7)) // within refractory
+        assertFalse(y.update(4_000, 0.2)) // closes
+        assertFalse(y.update(6_000, 0.7))
+        assertTrue(y.update(7_500, 0.7)) // second yawn, 6 s after the first
+        assertFalse(y.update(8_000, null)) // missing face resets
+    }
+
+    /** Batches of landmark samples, re-delivered and in any timestamp unit, still yield one yawn. */
+    @Test fun faceSamplerFindsYawnInBatches() {
+        for (unit in listOf(1L, 1_000L, 1_000_000L)) { // ms, µs, ns
+            val s = FaceSampler()
+            val closed = mesh(eyeGap = 3.0, lipGap = 0.5)
+            val yawning = mesh(eyeGap = 2.0, lipGap = 8.0)
+            val frames = (0 until 150).map { i -> (1_000_000L + i * 33L) * unit to if (i in 30..120) yawning else closed } // 5 s at 30 fps
+            val summaries = mutableListOf<FaceSummary>()
+            frames.chunked(30).forEach { batch ->
+                batch.forEach { (ts, p) -> s.add(ts, p) }
+                batch.forEach { (ts, p) -> assertFalse(s.add(ts, p)) } // re-delivered batch is ignored
+                summaries += s.drain()
+            }
+            assertEquals(unit, s.unitsPerMs, "unit")
+            assertEquals(1, s.totalYawns, "unit $unit")
+            assertEquals(1, summaries.count { it.yawned })
+            assertTrue(summaries.all { it.samples == 30 })
+            assertEquals(0.8, summaries[2].mouthOpenMax!!, 1e-9)
+            assertTrue(summaries[0].eyeClosed!! < 0.1)
+        }
+    }
+
+    /** At ~30 fps a real yawn has jittery frames; short dips must not split it, speech must not count. */
+    @Test fun yawnAtFrameRate() {
+        val y = YawnDetector()
+        var yawns = 0
+        // 2 s of speech: mouth flaps open for 200 ms at a time.
+        for (t in 0L until 2_000L step 33) if (y.update(t, if ((t / 200) % 2 == 0L) 0.7 else 0.2)) yawns++
+        assertEquals(0, yawns, "speech counted as a yawn")
+        // 3 s yawn with a dropped/jittery frame every 300 ms.
+        for (t in 5_000L until 8_000L step 33) if (y.update(t, if (t % 300 < 33) 0.4 else 0.8)) yawns++
+        assertEquals(1, yawns)
     }
 
     @Test fun reconnectBackoff() {
         val p = ReconnectPolicy()
         assertEquals(listOf(1000L, 2000, 4000, 8000, 16000, 30000, 30000), List(7) { p.nextDelayMs() })
+    }
+
+    /** Demo mode as TripController runs it: DemoClock pacing, cooldown kept at 2 real minutes. */
+    @Test fun demoPacingLeavesTimeToReply() {
+        val clock = DemoClock
+        val engine = TripEngine(gate = AlertGate(cooldownMs = (120_000L * clock.steadyRate).toLong()))
+        val t0 = 1_000_000L
+        engine.start(t0)
+        engine.onMotion(DemoScript.DEMO_SPEED_MPH, 42.28, -83.74)
+        val fired = mutableListOf<Pair<Int, Double>>() // tier to real seconds
+        var s = 0
+        var win = 0
+        while (clock.realMs(s * 1000L) < 300_000) { // 5 real minutes of 10 s script windows
+            win++
+            while (s < win * 10) { s++; engine.onPresage(DemoScript.frame(t0 + s * 1000L, s.toDouble())) }
+            engine.closeWindow(t0 + s * 1000L, false, 14.0).alertTier?.let { fired += it to clock.realMs(s * 1000L) / 1000.0 }
+        }
+        println("demo alerts (tier to real s): $fired")
+        assertEquals(listOf(40, 70, 85), fired.take(3).map { it.first })
+        assertTrue(fired[0].second <= 16.0, "first check-in at ${fired[0].second}s")
+        assertTrue(fired[1].second - fired[0].second >= 20.0, "only ${fired[1].second - fired[0].second}s to answer the check-in")
+        assertTrue(fired[2].second - fired[1].second >= 20.0, "only ${fired[2].second - fired[1].second}s between 70 and 85")
+        assertTrue(fired[2].second <= 100.0, "85 at ${fired[2].second}s")
+        // Repeats (alarm, group alert) stay at least 2 real minutes apart.
+        fired.drop(3).forEach { assertTrue(it.second - fired[2].second >= 119.0, "repeat 85 at ${it.second}s") }
+    }
+
+    @Test fun demoClockRoundTrips() {
+        assertEquals(15_000, DemoClock.realMs(180_000))
+        assertEquals(180_000, DemoClock.scriptMs(15_000))
+        for (ms in listOf(0L, 5_000, 15_000, 40_000, 120_000)) assertEquals(ms, DemoClock.realMs(DemoClock.scriptMs(ms)))
     }
 
     /** Scripted run must hit 40 / 70 / 85 in order with drowsy dominant. */

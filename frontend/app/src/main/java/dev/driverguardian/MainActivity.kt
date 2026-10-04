@@ -11,6 +11,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -26,6 +27,8 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import dev.driverguardian.trip.TripController
 import dev.driverguardian.ui.DashcamScreen
+import dev.driverguardian.ui.PlaceholderScreen
+import dev.driverguardian.ui.TabBar
 import dev.driverguardian.ui.DebugScreen
 import dev.driverguardian.ui.ReportCardScreen
 import dev.driverguardian.ui.SettingsScreen
@@ -50,36 +53,57 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun Root() {
         val needed = arrayOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION)
+        // The mic is optional: without it the app still speaks, it just can't hear replies.
+        val requested = needed + Manifest.permission.RECORD_AUDIO
         fun granted() = needed.all { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }
         var ok by remember { mutableStateOf(granted()) }
         var asked by remember { mutableStateOf(false) }
         val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { ok = granted() }
-        LaunchedEffect(Unit) { if (!ok && !asked) { asked = true; launcher.launch(needed) } }
+        LaunchedEffect(Unit) {
+            val micMissing = ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
+            if ((!ok || micMissing) && !asked) { asked = true; launcher.launch(requested) }
+        }
 
         if (!ok) {
             Column(Modifier.fillMaxSize().padding(24.dp)) {
-                Text("Driver Guardian needs the camera (to watch for drowsiness) and location (speed). Grant them while parked.")
-                Button(onClick = { launcher.launch(needed) }) { Text("Grant permissions") }
+                Text("Driver Guardian needs the camera (to watch for drowsiness) and location (speed), and the microphone to hear your replies. Grant them while parked.")
+                Button(onClick = { launcher.launch(requested) }) { Text("Grant permissions") }
             }
             return
         }
-        var screen by remember { mutableStateOf("dashcam") }
+        var tab by remember { mutableStateOf("drive") }
+        var showDebug by remember { mutableStateOf(false) }
         val ui by vm.ui.collectAsState()
         val conn by vm.connection.collectAsState()
+        val voice by vm.voiceState.collectAsState()
         val settings by vm.settingsFlow.collectAsState()
         val report by vm.report.collectAsState()
-        // Show the card once a trip ends; only reachable while parked.
-        val card = report
-        if (card != null) { ReportCardScreen(card) { vm.clearReport() }; return }
-        when (screen) {
-            "debug" -> DebugScreen(ui, vm.client, conn) { screen = "dashcam" }
-            "settings" -> SettingsScreen(settings, onSave = vm::saveSettings) { screen = "dashcam" }
-            else -> DashcamScreen(
-                ui = ui, conn = conn,
-                onStart = vm::startTrip, onEnd = vm::endTrip,
-                onDebug = { screen = "debug" }, onSettings = { screen = "settings" },
-                liveSensing = !settings.demoMode,
-            )
+        val parked = !ui.running || ui.speedMph < 3
+        // Jump to the report card when a trip ends.
+        LaunchedEffect(report) { if (report != null) tab = "stats" }
+        // Leaving the parked state always brings the driver back to the Drive tab.
+        LaunchedEffect(parked) { if (!parked) { tab = "drive"; showDebug = false } }
+
+        Column(Modifier.fillMaxSize()) {
+            Box(Modifier.weight(1f)) {
+                when (tab) {
+                    "stats" -> report?.let { ReportCardScreen(it) { tab = "drive" } }
+                        ?: PlaceholderScreen("Stats", "No trip yet. Start one on the Drive tab; its report card (grade, risk over time, advice) shows up here when it ends.")
+                    "contacts" -> PlaceholderScreen(
+                        "Contacts",
+                        "Who gets alerts is set on the backend for now: contacts.json lists guardians (alerts and location) " +
+                            "and friends (messages and roasts, no location). How much you share is under Settings.",
+                    )
+                    "settings" -> if (showDebug) DebugScreen(ui, vm.client, conn) { showDebug = false }
+                        else SettingsScreen(settings, onSave = vm::saveSettings, onDebug = { showDebug = true })
+                    else -> DashcamScreen(
+                        ui = ui, conn = conn, voice = voice,
+                        onStart = vm::startTrip, onEnd = vm::endTrip,
+                        liveSensing = !settings.demoMode,
+                    )
+                }
+            }
+            TabBar(selected = tab, parked = parked) { tab = it; showDebug = false }
         }
     }
 }

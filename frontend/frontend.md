@@ -16,7 +16,7 @@ The plan has eight numbered points. This brief covers six of them.
 | 2. Pre-trip check | **No, excluded** | No pre-trip screen, no rested / sleep / medication / experience inputs. |
 | 3. Risk score | **Yes** | Feature vector, weights, multiplier, `R`. |
 | 4. Decision tree | **Yes** | Phone owns tiers, hold, cooldown, escalation, alarm audio. |
-| 5. Voice through ElevenLabs | **No, excluded** | See "Excluded work" below. |
+| 5. Voice through ElevenLabs | **Yes (playback + replies)** | Play `speak` audio, listen, send `utterance` / `speak_done`. See [Voice](#voice). |
 | 6. Photon agent | Partial | Backend-only. The app only sends `sharingMode` and `kidsInCar`. |
 | 7. Trip log and report card | Partial | App streams windows to the backend. Report card screen is stretch. |
 | 8. Surroundings | Stretch | GPS speed vs fixed limit, weather, night driving. |
@@ -24,10 +24,9 @@ The plan has eight numbered points. This brief covers six of them.
 ### Excluded work (do not build)
 
 - **Pre-trip check (point 2).** No screen, no inputs, no storage. The features that depend on it (`sleep_deficit`, and the medication and experience terms of the context vector) are **fixed at neutral defaults** (see [Feature vector](#feature-vector)). Do not add protocol fields for them.
-- **Voice (point 5).** No audio playback of `speak.audio`, no on-device TTS fallback, no `SpeechRecognizer`, no `utterance` / `speak_done` frames, no listen windows, no tier-dependent voice delivery. The backend still sends `speak` frames; **receive and ignore them** (log at debug level, do not error). The driver-facing voice channel is a separate piece of work.
 - Also cut by the plan itself: Health Connect import, landing page, least-squares weight fitting, rear-camera YOLO, voice cloning, event map, Spotify.
 
-Two things that look like voice stay in scope: the **bundled alarm file** for the alarm stage (README §4), and handling the `navigate` and `dismissed` frames, which are plain protocol messages.
+Voice was originally excluded and is now in scope (see [Voice](#voice)). The **bundled alarm file** for the alarm stage (README §4) stays separate from it.
 
 The kids-in-car toggle comes from the pre-trip list in the plan, but the protocol (`hello` / `settings`), the backend tier bump and demo step 3 all need it, so it stays as a plain setting, not a questionnaire. That is an assumption; drop it if the plan owner says otherwise.
 
@@ -275,7 +274,7 @@ Endpoint `ws://<backend-host>:8787/phone`. Make the host configurable (settings 
 | `dismissed` | Weight nudge, stop alarm |
 | `navigate` `{query}` | `ACTION_VIEW` intent with `geo:0,0?q=<query>` |
 | `error` `{message}` | Log |
-| `speak` | **Ignore** (voice excluded). Debug log only. Never crash on it. |
+| `speak` `{id, text, tier, audio, listenAfterMs, context}` | `VoicePlayer`: play `audio` (mp3), or on-device TTS if empty; listen `listenAfterMs` and send `utterance` with the same `context`; always send `speak_done`. |
 
 Decode with `ignoreUnknownKeys = true` so new frames do not break the app.
 
@@ -284,6 +283,14 @@ Decode with `ignoreUnknownKeys = true` so new frames do not break the app.
 - Reconnect with capped exponential backoff (1 s → 30 s). Re-send `hello` after every reconnect.
 - Build frames from serializable classes in `net/Frames.kt` that mirror `protocol.ts` field for field. The backend validates with Zod and replies `error` to anything malformed.
 - Never block the sensing pipeline on the network.
+
+## Voice
+
+The backend picks and synthesizes every line (ElevenLabs, key stays on the backend) and sends one `speak` at a time, waiting for `speak_done`. `voice/VoicePlayer.kt`:
+
+1. Plays `audio` (base64 mp3) with `MediaPlayer`, or speaks `text` with `TextToSpeech` when `audio` is empty.
+2. If `listenAfterMs > 0` and the mic is allowed, runs `SpeechRecognizer` for that long and sends `utterance {text, context}`. The backend parses "I'm fine", yes/no and "tell her …".
+3. Always sends `speak_done {id}`, even on errors.
 
 ## UI
 
@@ -314,7 +321,7 @@ One driver, one trip at a time, one backend connection.
 
 ## Permissions
 
-`CAMERA`, `ACCESS_FINE_LOCATION`, `INTERNET`, `WAKE_LOCK`. **No `RECORD_AUDIO`**: voice is excluded. Request permissions on first launch while parked, with a clear failure state if denied.
+`CAMERA`, `ACCESS_FINE_LOCATION`, `INTERNET`, `WAKE_LOCK`, `RECORD_AUDIO`. Request them on first launch while parked. Camera and location are required (clear failure state if denied); the mic is optional: without it the app speaks but can't hear replies.
 
 ## Build order
 
@@ -346,7 +353,7 @@ The plan's rule applies: **the core loop (camera → score → alert → backend
 **Done means:**
 - A scripted run produces tiers 40, 70, 85 on cue with the right `dominant`.
 - The backend replies with no `error` frames.
-- No code path touches excluded work: no mic, no TTS, no audio other than the alarm, no pre-trip UI.
+- No code path touches excluded work: no pre-trip UI.
 - No secrets in the app or `BuildConfig`.
 
 ## Open protocol gaps
