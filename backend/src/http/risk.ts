@@ -38,7 +38,8 @@ export function createRiskRoutes(svc: RiskService) {
 
     const isTrips = a === "trips" && parts.length <= 3;
     const isDrivers = a === "drivers" && id && b === "trips" && parts.length === 3;
-    if (!isTrips && !isDrivers) return false;
+    const isPolicy = a === "drivers" && id && b === "policy" && parts.length === 3;
+    if (!isTrips && !isDrivers && !isPolicy) return false;
 
     try {
       if (m === "POST" && a === "trips" && parts.length === 1) {
@@ -53,6 +54,8 @@ export function createRiskRoutes(svc: RiskService) {
         send(res, 200, await svc.report(id));
       } else if (m === "GET" && a === "trips" && b === "state" && id) {
         send(res, 200, await svc.state(id));
+      } else if (m === "GET" && isPolicy) {
+        send(res, 200, await svc.driverPolicy(id!));
       } else if (m === "GET" && isDrivers) {
         send(res, 200, await svc.driverTrips(id!));
       } else {

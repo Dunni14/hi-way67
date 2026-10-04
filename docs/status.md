@@ -30,6 +30,7 @@ The Android app is not in the repository. Any feature that lives on the phone is
 | Feature vector **x**, two weight vectors, base risk `r = w · x` | Not started | Phone-side. The backend receives the final `R`, `drowsy`, `reckless` and stores the optional `features` map without reading it. |
 | Context/speed multiplier `m` | Not started | Phone-side. The backend applies kids-in-car only as a tier bump (see §4), not as a multiplier. |
 | Server-side logistic risk engine (REST + Postgres) | Done (backend) | Odds-ratio weights, baseline, overrides, cooldowns, feedback, report. See [risk-engine.md](risk-engine.md). The phone must call it; the legacy phone-computed path still works. |
+| Adaptive recommendations (LinUCB bandit, Tiger Data) | Done (backend) | Picks the intervention within tier 1/2; `intervention` on the windows response, `GET /drivers/{id}/policy`. Off without `TIGER_DATABASE_URL`. The voice client does not use `intervention.id` yet, and no family voice is configurable. See [risk-engine.md](risk-engine.md#adaptive-recommendations-contextual-bandit). |
 | Hand-set weights | Not started | Phone-side (legacy path). The engine's weights live in `backend/src/risk/weights.json`. |
 | "I'm fine" gradient step on **w** | Partial | Backend recognizes the phrase and sends `{"type":"dismissed"}`. Applying the nudge and showing weights on a debug screen is phone work and not started. |
 | Ridge regression fitting | Not started | Roadmap in the README too. |

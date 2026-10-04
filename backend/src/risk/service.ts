@@ -1,6 +1,7 @@
 // Orchestrates the pure core and the store. No ElevenLabs / Photon calls here:
 // it returns actions and callers (client, orchestrator) act on them.
 import { randomUUID } from "node:crypto";
+import type { BanditService, Intervention } from "../bandit/service.ts";
 import { riskConfig, type RiskConfig } from "./config.ts";
 import { initialState, processWindow, type EngineState } from "./decision.ts";
 import { defaultMults, dominantFactor } from "./score.ts";
@@ -27,6 +28,8 @@ export class RiskService {
     private cfg: RiskConfig = riskConfig,
     /** Optional hook for in-process consumers (the orchestrator). Failures never affect the response. */
     private onEvaluation?: (tripId: string, ev: Evaluation) => void | Promise<void>,
+    /** Optional adaptive-recommendation layer (needs TIGER_DATABASE_URL). Never changes tiers or actions. */
+    private bandit?: BanditService,
   ) {}
 
   async startTrip(body: TripStart & { sharing_mode?: SharingMode }) {
@@ -44,14 +47,14 @@ export class RiskService {
   }
 
   /** Windows for one trip are processed strictly in arrival order. */
-  ingestWindow(tripId: string, w: SignalWindow): Promise<Evaluation> {
+  ingestWindow(tripId: string, w: SignalWindow): Promise<Evaluation & { intervention?: Intervention }> {
     const prev = this.chains.get(tripId) ?? Promise.resolve();
     const next = prev.catch(() => {}).then(() => this.ingest(tripId, w));
     this.chains.set(tripId, next);
     return next;
   }
 
-  private async ingest(tripId: string, w: SignalWindow): Promise<Evaluation> {
+  private async ingest(tripId: string, w: SignalWindow): Promise<Evaluation & { intervention?: Intervention }> {
     const trip = await this.mustTrip(tripId);
     if (trip.endedAt) throw new HttpError(409, "trip already ended");
     if (Number.isNaN(Date.parse(w.ts))) throw new HttpError(400, "invalid ts");
@@ -76,7 +79,19 @@ export class RiskService {
     } catch (e) {
       console.error("[risk] onEvaluation:", e);
     }
-    return evaluation;
+    return this.bandit ? { ...evaluation, ...(await this.recommend(trip, evaluation, ts)) } : evaluation;
+  }
+
+  /** Settle due rewards, then pick an intervention for a tier 1/2 voice action. A bandit failure never breaks the response. */
+  private async recommend(trip: TripRow, ev: Evaluation, ts: string): Promise<{ intervention?: Intervention }> {
+    try {
+      await this.bandit!.processRewards({ trip, nowTs: ts, windows: () => this.store.getWindows(trip.id) });
+      const intervention = await this.bandit!.select({ trip, ev, ts });
+      return intervention ? { intervention } : {};
+    } catch (e) {
+      console.error("[bandit]", e);
+      return {};
+    }
   }
 
   /** Active-trip runtime; after a restart it is rebuilt by replaying stored windows (the core is deterministic). */
@@ -103,6 +118,7 @@ export class RiskService {
     const step = fb.verdict === "false_alarm" ? F.falseAlarm : F.confirmed;
     mults[factor] = Math.min(F.max, Math.max(F.min, mults[factor] * step));
     await this.store.setWeightOverrides(trip.driverId, Object.fromEntries(FACTORS.map((f) => [f, mults[f]])));
+    if (fb.verdict === "false_alarm") await this.bandit?.markFalseAlarm(tripId, new Date(fb.window_ts).toISOString()).catch((e) => console.error("[bandit]", e));
     return { factor, multiplier: mults[factor] };
   }
 
@@ -136,6 +152,11 @@ export class RiskService {
         return { trip_id: t.id, started_at: t.startedAt, ended_at: t.endedAt, max_score: s.max_score, grade: s.grade };
       }),
     );
+  }
+
+  async driverPolicy(driverId: string) {
+    if (!this.bandit) throw new HttpError(404, "adaptive recommendations disabled (TIGER_DATABASE_URL not set)");
+    return this.bandit.policy(driverId);
   }
 
   private async mustTrip(id: string) {

@@ -40,6 +40,8 @@ export const config = {
 
   // Postgres (Tiger Data / Timescale compatible). Unset = risk REST API disabled.
   databaseUrl: optional("DATABASE_URL"),
+  // Tiger Data for the adaptive-recommendation bandit. Unset = bandit off (needs DATABASE_URL too).
+  tigerDatabaseUrl: optional("TIGER_DATABASE_URL"),
 
   roastWindowMs: 3 * 60_000,
 };
