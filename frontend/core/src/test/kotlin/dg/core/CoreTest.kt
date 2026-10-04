@@ -81,6 +81,7 @@ class CoreTest {
         assertEquals("""{"type":"hello","driverName":"A","sharingMode":"high_only","kidsInCar":false}""",
             encodeFrame(PhoneFrame.Hello("A")))
         assertEquals("""{"type":"trip_start"}""", encodeFrame(PhoneFrame.TripStart))
+        assertEquals("""{"type":"trip_recap","image":"aGk="}""", encodeFrame(PhoneFrame.RecapImage("aGk=")))
         val w = PhoneFrame.RiskWindow(ts = 1, speed = 65.0, events = listOf(DriverEvent.YAWN),
             signals = WindowSignals(faceVisible = true, eyeClosureFrac = 0.4, longestEyeClosureS = 2.2, yawns = 1, speedMph = 65.0))
         assertEquals(

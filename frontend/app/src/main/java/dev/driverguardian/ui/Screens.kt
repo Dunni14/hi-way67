@@ -1,5 +1,6 @@
 package dev.driverguardian.ui
 
+import android.graphics.Bitmap
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -24,9 +25,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
@@ -50,7 +55,9 @@ import dg.core.SPEED_LIMIT_MPH
 import dg.core.SharingMode
 import dg.core.TripRecap
 import dg.core.TripSummary
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.io.ByteArrayOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -379,19 +386,37 @@ fun SettingsScreen(s: AppSettings, onSave: (AppSettings) -> Unit, onDebug: () ->
     }
 }
 
-/** Popup shown when a trip ends: how fast and how alert the drive was. */
+/**
+ * Popup shown when a trip ends: how fast and how alert the drive was. Once the card (everything
+ * above the buttons) has been drawn, [onImage] gets a PNG of it, which goes to the contacts.
+ */
 @Composable
-fun TripRecapDialog(recap: TripRecap, onDone: () -> Unit, onReport: (() -> Unit)?) {
+fun TripRecapDialog(recap: TripRecap, onDone: () -> Unit, onReport: (() -> Unit)?, onImage: (ByteArray) -> Unit = {}) {
     Dialog(onDismissRequest = onDone) {
-        Column(Modifier.fillMaxWidth().clip(CardShape).background(Surface).padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Trip summary", color = OnSurface, fontSize = 22.sp)
-            Text("${recap.durationMin} min", color = SystemText, style = Label)
-            RecapRow("Average speed", recap.avgSpeedMph?.let { "%.0f mph".format(it) } ?: "--", SystemText)
-            RecapRow("Top speed", recap.topSpeedMph?.let { "%.0f mph".format(it) } ?: "--", SystemText)
-            val alertColor = when (recap.alertnessLabel) { "GREAT" -> Good; "GOOD" -> Main; "LOW" -> Bad; else -> SystemText }
-            RecapRow("Alertness", recap.alertness?.let { "$it%  ${recap.alertnessLabel}" } ?: "Not scored", alertColor)
-            if (recap.alertness == null) Text("Alertness comes from the backend's scoring, which this trip did not get.", color = SystemText, style = Label)
-            Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        val card = rememberGraphicsLayer()
+        LaunchedEffect(recap) {
+            delay(400) // let the dialog lay out and draw first
+            runCatching {
+                val bitmap = card.toImageBitmap().asAndroidBitmap().copy(Bitmap.Config.ARGB_8888, false)
+                ByteArrayOutputStream().use { out -> bitmap.compress(Bitmap.CompressFormat.PNG, 100, out); out.toByteArray() }
+            }.onSuccess(onImage)
+        }
+        Column(Modifier.fillMaxWidth().clip(CardShape).background(Surface)) {
+            Column(
+                Modifier.fillMaxWidth()
+                    .drawWithContent { card.record { this@drawWithContent.drawContent() }; drawLayer(card) }
+                    .background(Surface).padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text("Trip summary", color = OnSurface, fontSize = 22.sp)
+                Text("${recap.durationMin} min", color = SystemText, style = Label)
+                RecapRow("Average speed", recap.avgSpeedMph?.let { "%.0f mph".format(it) } ?: "--", SystemText)
+                RecapRow("Top speed", recap.topSpeedMph?.let { "%.0f mph".format(it) } ?: "--", SystemText)
+                val alertColor = when (recap.alertnessLabel) { "GREAT" -> Good; "GOOD" -> Main; "LOW" -> Bad; else -> SystemText }
+                RecapRow("Alertness", recap.alertness?.let { "$it%  ${recap.alertnessLabel}" } ?: "Not scored", alertColor)
+                if (recap.alertness == null) Text("Alertness comes from the backend's scoring, which this trip did not get.", color = SystemText, style = Label)
+            }
+            Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (onReport != null) OutlinedButton(onClick = onReport, modifier = Modifier.weight(1f), shape = CardShape) { Text("View report") }
                 Button(onClick = onDone, modifier = Modifier.weight(1f), shape = CardShape) { Text("Done") }
             }

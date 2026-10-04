@@ -21,6 +21,7 @@ import dg.core.PhoneFrame
 import dg.core.RealClock
 import dg.core.ReportCard
 import dg.core.TripClock
+import dg.core.SharingMode
 import dg.core.SpeedTracker
 import dg.core.TripHistory
 import dg.core.TripRecap
@@ -34,6 +35,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import java.util.Base64
 
 data class UiState(
     val running: Boolean = false,
@@ -113,6 +115,17 @@ class TripController(app: Application) : AndroidViewModel(app) {
     val recap: StateFlow<TripRecap?> = _recap
     fun dismissRecap() { _recap.value = null }
 
+    private var recapImageSent = false
+    /**
+     * The popup's card as a PNG. Sent once per scored trip, right after `trip_end`; the backend passes
+     * it on to the contacts. Nothing is sent when sharing is off or the backend isn't connected.
+     */
+    fun sendRecapImage(png: ByteArray) {
+        if (recapImageSent || _recap.value?.alertness == null || settings.sharingMode == SharingMode.NEVER) return
+        recapImageSent = true
+        client.send(PhoneFrame.RecapImage(Base64.getEncoder().encodeToString(png)))
+    }
+
     /** Pacing of the current trip: [DemoClock] in demo mode, else real time. */
     private var clock: TripClock = RealClock
     private var tripStartMs = 0L
@@ -153,7 +166,7 @@ class TripController(app: Application) : AndroidViewModel(app) {
         clock = c
         client.send(PhoneFrame.TripStart)
         sentEvents.clear(); samples.clear(); _report.value = null
-        speed = SpeedTracker(); _recap.value = null
+        speed = SpeedTracker(); _recap.value = null; recapImageSent = false
         _ui.value = UiState(running = true, calibrating = true, calibrationLeftSec = calibrationLeftSec())
 
         val agg = WindowAggregator()

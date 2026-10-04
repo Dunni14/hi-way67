@@ -15,6 +15,7 @@ The phone senses and displays; the backend's risk engine (`src/risk`) scores eve
 | `risk_window` | `ts` (epoch ms, real time, unique), `speed` (mph), `lat?`, `lon?`, `events[]` (`yawn`,`nod`,`hard_brake`,`swerve`), `signals` (raw, below) | every 10 s (faster in demo mode) |
 | `utterance` | `text`, `context` (copy the `context` of the `speak` you listened after, or `free`) | speech-to-text result |
 | `speak_done` | `id` | finished playing a `speak` (and its listen window) |
+| `trip_recap` | `image` (base64 PNG of the phone's end-of-trip summary card, at most 2 MB of base64) | once, right after `trip_end` |
 
 `signals` (all optional; leave out what you don't know): `face_visible`, `heart_rate`, `breathing_rate`, `engagement`, `eye_closure_frac` (share of the window with eyes closed), `longest_eye_closure_s` (longest continuous closure; 1.5 s or more is a microsleep), `yawns`, `emotion_stress`, `gaze_off_road_s`, `phone_in_hand`, `hard_brakes`, `swerves`, `speed_mph`, `speed_limit_mph`.
 
@@ -27,5 +28,7 @@ The phone senses and displays; the backend's risk engine (`src/risk`) scores eve
 | `navigate` | `query` | open maps for "rest stop" |
 | `dismissed` | `factor?`, `multiplier?` | driver said "I'm fine": stop the alarm; the engine eased that factor's weight for this driver |
 | `error` | `message` | log it |
+
+On `trip_recap` the backend posts "<driver> completed their trip safely." (without "safely" if the trip had an urgent alert) followed by the image, to the same contacts as the trip summary. It is ignored when sharing is `never`, when no trip ended in the last two minutes, when it isn't a PNG, or when that trip's image was already posted.
 
 The backend decides tiers (holds, overrides such as microsleep, cooldowns, kids in car), speaks, notifies contacts and runs the roast. The phone only reports raw signals.

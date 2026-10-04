@@ -6,7 +6,7 @@ import type { PhoneMsg, Tier, Dominant } from "./ws/protocol.ts";
 import { sendToPhone } from "./ws/server.ts";
 import { driverQueue } from "./voice/driverQueue.ts";
 import { ackLine, alertLine, ASKS_REST_STOP, gradeOf, interventionLine, messageLine, permissionLine, roastLine, speedingNudge } from "./voice/lines.ts";
-import { post, dm, type Inbound } from "./agent/spectrum.ts";
+import { post, dm, pngAttachment, type Inbound } from "./agent/spectrum.ts";
 import { classify, shortenForSpeech } from "./agent/classifier.ts";
 import { answerQuestion } from "./agent/answer.ts";
 import { parseDriverUtterance } from "./agent/driverIntent.ts";
@@ -73,6 +73,9 @@ export function createOrchestrator(store: TripStore, restStops = new RestStopFin
       case "speak_done":
         driverQueue.done(msg.id);
         return;
+
+      case "trip_recap":
+        return onTripRecap(msg.image);
     }
   }
 
@@ -153,6 +156,29 @@ export function createOrchestrator(store: TripStore, restStops = new RestStopFin
         await store.setContactPrefs(c.handle, { notifyOnArrival: false });
       }
     }
+  }
+
+  /** Start time of the trip whose recap image was already posted, so a repeat frame isn't posted twice. */
+  let recapPostedFor = 0;
+
+  /**
+   * The phone's end-of-trip summary card (a PNG). Forward it to the contacts with a one-line caption.
+   * Only for the trip that is ending or ended in the last two minutes, and never when sharing is off.
+   */
+  async function onTripRecap(imageBase64: string) {
+    const recent = trip.active || (trip.endedAt != null && Date.now() - trip.endedAt < 120_000);
+    if (!recent || trip.sharingMode === "never" || recapPostedFor === trip.startedAt) return;
+    const png = Buffer.from(imageBase64, "base64");
+    const isPng = png.length > 8 && png.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    if (!isPng) {
+      console.warn("[trip] recap image is not a PNG, ignored");
+      return;
+    }
+    recapPostedFor = trip.startedAt;
+    // "safely" is left out when the trip had an urgent alert.
+    const caption = trip.lastHighAlertAt > 0 ? `${d()} completed their trip.` : `${d()} completed their trip safely.`;
+    await post(caption, "friend", pngAttachment(png, "trip-summary.png")).catch(logPostError);
+    console.log(`[trip] recap image (${png.length} bytes) passed on with: ${caption}`);
   }
 
   /**

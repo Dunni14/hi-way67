@@ -2,7 +2,7 @@
 // The family group chat `space` is captured the first time an allowlisted
 // contact writes in a group (or anyone sends "/start" there) and reused for
 // proactive posts. If no group is known, posts fan out to known DM spaces.
-import { Spectrum, type Message, type Space } from "spectrum-ts";
+import { Spectrum, attachment, type Message, type Space } from "spectrum-ts";
 import { imessage } from "@spectrum-ts/imessage";
 import { telegram } from "@spectrum-ts/telegram";
 import { config, required } from "../config.ts";
@@ -93,27 +93,39 @@ async function route(space: Space, message: Message, onMessage: (m: Inbound) => 
   await onMessage({ contact, space, message, text: body, isGroup });
 }
 
-/** Post to the family group (or every known DM as fallback). `minRole` limits who receives it. */
-export async function post(text: string, minRole: Role = "friend") {
+/** Anything `space.send` takes besides the text itself, such as an attachment. */
+export type Extra = Parameters<Space["send"]>[number];
+
+/** `space.send` takes either one item or at least two, so pick the overload by how many extras there are. */
+function sendAll(space: Space, text: string, extra: Extra[]) {
+  const [first, ...rest] = extra;
+  return first === undefined ? space.send(text) : space.send(text, first, ...rest);
+}
+
+/** A PNG as outbound content, to pass as an extra to `post` or `dm`. */
+export const pngAttachment = (png: Buffer, name: string): Extra => attachment(png, { name, mimeType: "image/png" });
+
+/** Post to the family group (or every known DM as fallback). `minRole` limits who receives it. Extras follow the text. */
+export async function post(text: string, minRole: Role = "friend", ...extra: Extra[]) {
   if (groupSpace && minRole === "friend") {
-    await groupSpace.send(text);
+    await sendAll(groupSpace, text, extra);
     return;
   }
   const targets = allContacts().filter((c) => minRole === "friend" || c.role === "guardian");
   if (targets.length === 0) {
     // Dev mode (no contacts.json): best we can do is the group.
-    if (groupSpace) await groupSpace.send(text);
+    if (groupSpace) await sendAll(groupSpace, text, extra);
     else console.warn(`[spectrum] no group chat or contacts yet, not posted: ${text}`);
     return;
   }
-  for (const c of targets) await dm(c.handle, text);
+  for (const c of targets) await dm(c.handle, text, ...extra);
 }
 
 /**
  * Direct message one contact. Reuses the DM space we saw them write from; only
  * iMessage DMs can be opened from our side (Telegram bots can't start a chat).
  */
-export async function dm(handle: string, text: string) {
+export async function dm(handle: string, text: string, ...extra: Extra[]) {
   try {
     let space = dmSpaces.get(handle);
     const contact = allContacts().find((c) => c.handle === handle);
@@ -125,7 +137,7 @@ export async function dm(handle: string, text: string) {
       console.warn(`[spectrum] can't DM ${contact?.name ?? handle} on telegram until they message the bot privately once`);
       return;
     }
-    await space.send(text);
+    await sendAll(space, text, extra);
   } catch (err) {
     console.error(`[spectrum] DM to ${handle} failed:`, err);
   }

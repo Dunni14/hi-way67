@@ -78,6 +78,10 @@ sealed interface PhoneFrame {
     /** Finished playing a `speak` (and its listen window). */
     @Serializable @SerialName("speak_done")
     data class SpeakDone(val id: String) : PhoneFrame
+
+    /** PNG (base64) of the end-of-trip summary card, sent right after `trip_end` for the backend to pass on to the contacts. */
+    @Serializable @SerialName("trip_recap")
+    data class RecapImage(val image: String) : PhoneFrame
 }
 
 /** Raw signals for one window, named like the risk engine's SignalWindow. Null = unknown (left out of the JSON). */

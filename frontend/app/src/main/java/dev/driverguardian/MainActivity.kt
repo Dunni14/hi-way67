@@ -115,6 +115,7 @@ class MainActivity : ComponentActivity() {
             TripRecapDialog(
                 r, onDone = vm::dismissRecap,
                 onReport = if (report != null) ({ vm.dismissRecap(); tab = "stats"; showReport = true }) else null,
+                onImage = vm::sendRecapImage,
             )
         }
     }

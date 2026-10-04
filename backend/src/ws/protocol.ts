@@ -75,6 +75,9 @@ export const PhoneMsg = z.discriminatedUnion("type", [
   }),
   // Phone finished playing a `speak` (and its listen window, if any).
   z.object({ type: z.literal("speak_done"), id: z.string() }),
+  // PNG of the phone's end-of-trip summary card, sent right after `trip_end`. The backend
+  // forwards it to the contacts with a one-line caption (never when sharing is "never").
+  z.object({ type: z.literal("trip_recap"), image: z.string().min(1).max(2_000_000) }), // base64
 ]);
 export type PhoneMsg = z.infer<typeof PhoneMsg>;
 

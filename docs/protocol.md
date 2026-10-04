@@ -74,6 +74,13 @@ Send when a `speak` has finished playing, including its listen window.
 ```
 If this never arrives, the backend times out and moves on after `text.length / 15` seconds (minimum 2 s), plus `listenAfterMs`, plus 3 s.
 
+### `trip_recap`
+A picture of the phone's end-of-trip summary card (average speed, top speed, alertness), sent once, right after `trip_end`.
+```json
+{ "type": "trip_recap", "image": "iVBORw0KGgo…" }
+```
+`image` is a base64 PNG, at most 2 MB of base64. The backend posts "<driver> completed their trip safely." followed by the image to the family group, or to each allowlisted contact by DM when there is no group. "safely" is left out if the trip had an urgent alert. The frame is ignored when sharing is `never`, when no trip is active or ended in the last two minutes, when the bytes are not a PNG, or when that trip's image was already posted. The phone only sends it for a trip the engine scored.
+
 ## Backend → phone
 
 ### `evaluation`
