@@ -8,7 +8,7 @@ import WebSocket from "ws";
 
 const url = process.env.PHONE_WS_URL ?? `ws://localhost:${process.env.PORT ?? 8787}/phone`;
 const interactive = process.argv.includes("-i");
-const HELP = `commands: start | end | win <R> [yawn,nod,...] | alert <40|70|85> [drowsy|reckless] | say <text> [as <context>] | share <always|high_only|never> | kids <on|off> | quit`;
+const HELP = `commands: start | end | win <R> [yawn,nod,...] | alert <40|70|85> [drowsy|reckless] | say <text> [as <context>] | share <always|high_only|never> | kids <on|off> | sim <calm|drowsy|reckless> <seconds> | quit`;
 
 mkdirSync("out", { recursive: true });
 const ws = new WebSocket(url);
@@ -23,6 +23,25 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const win = (R: number, events: string[] = [], speed = 68) =>
   send({ type: "risk_window", ts: Date.now(), R, drowsy: R, reckless: R / 3, speed, lat: 42.2808, lon: -83.743, events });
+
+// Streams synthetic 1 Hz `sensor_sample`s on a fast-forwarded clock so the
+// backend risk engine (not this script) computes windows and alerts.
+let simTs = Date.now();
+const PROFILES: Record<string, (t: number) => object> = {
+  calm: () => ({ hr: 72, breathing: 15, engagement: 0.9, eyeClosure: 0.02, stress: 0.05, speed: 60 }),
+  drowsy: (t) => ({ hr: 56, breathing: 9, engagement: 0.3, eyeClosure: 0.45, stress: 0.05, yawn: t % 3 === 0, speed: 60 }),
+  reckless: (t) => ({ hr: 98, breathing: 18, engagement: 0.7, eyeClosure: 0.02, stress: 0.7, speed: 88, hardBrake: t % 5 === 0, swerve: t % 7 === 0 }),
+};
+async function sim(profile: string, seconds: number) {
+  const make = PROFILES[profile];
+  if (!make) return console.log(HELP);
+  for (let t = 0; t < seconds; t++) {
+    simTs += 1000;
+    ws.send(JSON.stringify({ type: "sensor_sample", ts: simTs, speedLimit: 65, lat: 42.2808, lon: -83.743, ...make(t) }));
+    await sleep(20);
+  }
+  console.log(`sim ${profile}: sent ${seconds} samples`);
+}
 
 ws.on("message", (data) => {
   const msg = JSON.parse(data.toString());
@@ -72,6 +91,7 @@ async function repl() {
       }
       case "share": send({ type: "settings", sharingMode: rest[0] }); break;
       case "kids": send({ type: "settings", kidsInCar: rest[0] === "on" }); break;
+      case "sim": await sim(rest[0] ?? "calm", Number(rest[1] ?? 60)); break;
       case "quit": process.exit(0);
       default: console.log(HELP);
     }

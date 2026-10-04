@@ -55,6 +55,28 @@ Send every 10 seconds.
 | `events` | array, default `[]` | `yawn`, `nod`, `hard_brake`, `swerve`. `hard_brake` pauses speech for 10 s. `yawn` and `nod` feed the roast text and answers. |
 | `features` | `{string: number}`, optional | Stored as-is, not interpreted |
 
+### `sensor_sample`
+Optional alternative to `risk_window` + `alert`. Send about once per second and the backend's [risk engine](risk-engine.md) computes the windows, tiers and alerts. Omit Presage fields when the face is lost.
+```json
+{
+  "type": "sensor_sample", "ts": 1759500001000,
+  "hr": 61, "breathing": 11, "engagement": 0.4, "eyeClosure": 0.3, "stress": 0.05,
+  "yawn": true, "nod": false, "gazeOff": false,
+  "speed": 68, "speedLimit": 65, "hardBrake": false, "swerve": false,
+  "lat": 42.2808, "lon": -83.743
+}
+```
+| Field | Type | Notes |
+|---|---|---|
+| `ts` | number | Epoch ms. The engine's clock is the sample clock, not wall time. |
+| `hr`, `breathing` | number, optional | bpm, breaths/min |
+| `engagement`, `eyeClosure`, `stress` | 0..1, optional | |
+| `yawn`, `nod`, `gazeOff`, `hardBrake`, `swerve` | boolean, optional | `true` for this second |
+| `speed`, `speedLimit` | number, optional | mph. Default limit 65 |
+| `lat`, `lon` | number, optional | Last values are attached to the window |
+
+Every 10 s of samples becomes a stored window, and the decision tree may fire an `alert` internally. `hello` and `settings` also accept `lowExperience` (boolean).
+
 ### `alert`
 Send when the phone's decision tree fires, after its 15 s hold and cooldown.
 ```json

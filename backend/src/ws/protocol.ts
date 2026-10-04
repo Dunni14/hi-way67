@@ -26,11 +26,13 @@ export const PhoneMsg = z.discriminatedUnion("type", [
     driverName: z.string().optional(),
     sharingMode: SharingMode.default("high_only"),
     kidsInCar: z.boolean().default(false),
+    lowExperience: z.boolean().default(false),
   }),
   z.object({
     type: z.literal("settings"),
     sharingMode: SharingMode.optional(),
     kidsInCar: z.boolean().optional(),
+    lowExperience: z.boolean().optional(),
   }),
   z.object({ type: z.literal("trip_start") }),
   z.object({ type: z.literal("trip_end") }),
@@ -45,6 +47,28 @@ export const PhoneMsg = z.discriminatedUnion("type", [
     lon: z.number().optional(),
     events: z.array(DriverEvent).default([]),
     features: z.record(z.string(), z.number()).optional(),
+  }),
+  // Raw ~1 Hz signals. If the phone sends these, the backend runs the risk
+  // engine (backend/src/risk) and produces windows and alerts itself, so the
+  // phone does not need to send `risk_window` / `alert`. Presage fields are
+  // omitted when the face is lost.
+  z.object({
+    type: z.literal("sensor_sample"),
+    ts: z.number(),
+    hr: z.number().optional(),
+    breathing: z.number().optional(),
+    engagement: z.number().min(0).max(1).optional(),
+    eyeClosure: z.number().min(0).max(1).optional(),
+    stress: z.number().min(0).max(1).optional(),
+    yawn: z.boolean().optional(),
+    nod: z.boolean().optional(),
+    gazeOff: z.boolean().optional(),
+    speed: z.number().optional(),
+    speedLimit: z.number().optional(),
+    hardBrake: z.boolean().optional(),
+    swerve: z.boolean().optional(),
+    lat: z.number().optional(),
+    lon: z.number().optional(),
   }),
   z.object({
     type: z.literal("alert"),

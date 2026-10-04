@@ -50,7 +50,7 @@ The root README's decision tree (§4) is split in two:
 | "I'm fine" → `dismissed` frame | Backend | Done |
 | Weight nudge on `dismissed` | Phone | Not started |
 
-The phone **reports** and the backend **acts**. The backend never computes risk itself; it trusts `R` and `tier` from the phone.
+That table describes the legacy mode. The backend now also has a [risk engine](risk-engine.md): if the phone sends raw `sensor_sample`s, the backend computes `R`, the sub-scores, the tier, the hold, the cooldown and the weight nudge itself, then runs the same voice and iMessage actions. With `risk_window` + `alert`, the backend still trusts the phone.
 
 ## Main data flows
 

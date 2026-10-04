@@ -10,6 +10,7 @@ Technical documentation for the code in this repository. The product pitch, trac
 |---|---|
 | [status.md](status.md) | Feature-by-feature implementation status against the root README, plus known issues |
 | [architecture.md](architecture.md) | Components, data flow, who owns which part of the decision tree |
+| [risk-engine.md](risk-engine.md) | Backend risk score, signal processing and decision tree (`backend/src/risk/`) |
 | [backend.md](backend.md) | Setup, environment variables, scripts, module reference |
 | [protocol.md](protocol.md) | Phone ↔ backend WebSocket contract, with example frames and sequences |
 | [imessage-agent.md](imessage-agent.md) | Photon Spectrum agent: roles, message classification, the four flows, the roast, sharing modes |

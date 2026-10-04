@@ -2,7 +2,7 @@
 // decision-tree outputs (§4) turn into voice (§5) and chat actions (§6).
 import { trip } from "./trip/state.ts";
 import type { TripStore } from "./trip/store.ts";
-import type { PhoneMsg, Tier, Dominant } from "./ws/protocol.ts";
+import type { PhoneMsg, Tier, Dominant, DriverEvent } from "./ws/protocol.ts";
 import { sendToPhone } from "./ws/server.ts";
 import { driverQueue } from "./voice/driverQueue.ts";
 import { ackLine, alertLine, messageLine, permissionLine, roastLine } from "./voice/lines.ts";
@@ -12,6 +12,8 @@ import { answerQuestion } from "./agent/answer.ts";
 import { parseDriverUtterance } from "./agent/driverIntent.ts";
 import { roast } from "./agent/roast.ts";
 import { allContacts } from "./agent/contacts.ts";
+import { riskEngine } from "./risk/engine.ts";
+import type { Decision } from "./risk/tree.ts";
 
 const LISTEN_MS = 5000;
 
@@ -27,12 +29,19 @@ export function createOrchestrator(store: TripStore) {
         if (msg.driverName) trip.driverName = msg.driverName;
         trip.sharingMode = msg.sharingMode;
         trip.kidsInCar = msg.kidsInCar;
+        riskEngine.context = { kidsInCar: msg.kidsInCar, lowExperience: msg.lowExperience };
+        riskEngine.sharing = msg.sharingMode;
         console.log(`[phone] hello: ${trip.driverName}, sharing=${trip.sharingMode}, kids=${trip.kidsInCar}`);
         return;
 
       case "settings":
         if (msg.sharingMode) trip.sharingMode = msg.sharingMode;
         if (msg.kidsInCar !== undefined) trip.kidsInCar = msg.kidsInCar;
+        riskEngine.sharing = trip.sharingMode;
+        riskEngine.context = {
+          kidsInCar: trip.kidsInCar,
+          lowExperience: msg.lowExperience ?? riskEngine.context.lowExperience,
+        };
         return;
 
       case "trip_start":
@@ -42,13 +51,12 @@ export function createOrchestrator(store: TripStore) {
         return onTripEnd();
 
       case "risk_window": {
-        if (!trip.active) onTripStart();
         const { type: _, features, ...w } = msg;
-        trip.addWindow(w);
-        if (w.events.includes("hard_brake")) driverQueue.pause();
-        await store.saveWindow({ tripId: trip.tripId!, ...w, features }).catch((err) => console.error("[store] saveWindow:", err));
-        return;
+        return recordWindow(w, features);
       }
+
+      case "sensor_sample":
+        return onSensorSample(msg);
 
       case "alert":
         return onAlert(msg.tier, msg.dominant, msg.R);
@@ -62,9 +70,45 @@ export function createOrchestrator(store: TripStore) {
     }
   }
 
+  type WindowIn = Parameters<typeof trip.addWindow>[0];
+  async function recordWindow(w: WindowIn, features?: Record<string, number>) {
+    if (!trip.active) await onTripStart();
+    trip.addWindow(w);
+    if (w.events.includes("hard_brake")) driverQueue.pause();
+    await store.saveWindow({ tripId: trip.tripId!, ...w, features }).catch((err) => console.error("[store] saveWindow:", err));
+  }
+
+  // Raw signals → risk engine → window + decision tree (backend/src/risk).
+  const sampleEvents: DriverEvent[] = [];
+  async function onSensorSample(m: Extract<PhoneMsg, { type: "sensor_sample" }>) {
+    if (!trip.active) await onTripStart();
+    const { type: _, lat, lon, ...sample } = m;
+    if (m.hardBrake) sampleEvents.push("hard_brake");
+    if (m.swerve) sampleEvents.push("swerve");
+    if (m.yawn) sampleEvents.push("yawn");
+    if (m.nod) sampleEvents.push("nod");
+    const out = riskEngine.push(sample);
+    if (!out) return;
+    const { window: w, decision } = out;
+    const events = [...new Set(sampleEvents.splice(0))];
+    await recordWindow(
+      { ts: w.ts, R: w.R, drowsy: w.drowsy, reckless: w.reckless, speed: m.speed ?? 0, lat, lon, events },
+      w.features,
+    );
+    if (decision) await onDecision(decision);
+  }
+
+  async function onDecision(d: Decision) {
+    console.log(`[tree] tier=${d.tier} ${d.dominant} R=${Math.round(d.R)}: ${d.reason}`);
+    if (d.routeRestStop) sendToPhone({ type: "navigate", query: "rest stop" });
+    // The tree already applied the kids-in-car bump.
+    await onAlert(d.tier, d.dominant, d.R, true);
+  }
+
   async function onTripStart() {
     if (trip.active) return;
     trip.start();
+    riskEngine.startTrip(Date.now());
     await store.startTrip({ tripId: trip.tripId!, driverName: d(), startedAt: trip.startedAt, maxR: 0, alerts: 0 });
     console.log(`[trip] started ${trip.tripId}`);
     if (trip.sharingMode !== "always") return;
@@ -98,9 +142,10 @@ export function createOrchestrator(store: TripStore) {
     }
   }
 
-  async function onAlert(phoneTier: Tier, dominant: Dominant, R: number) {
-    // Kids in the car bump the 70 tier up a level (README §4).
-    const tier: Tier = phoneTier === 70 && trip.kidsInCar ? 85 : phoneTier;
+  async function onAlert(phoneTier: Tier, dominant: Dominant, R: number, bumped = false) {
+    // Kids in the car bump the 70 tier up a level (README §4), unless the risk
+    // engine's tree already did.
+    const tier: Tier = !bumped && phoneTier === 70 && trip.kidsInCar ? 85 : phoneTier;
     trip.recordAlert(tier, dominant, R);
     console.log(`[alert] tier=${tier} (${dominant}) R=${Math.round(R)}`);
 
@@ -150,12 +195,14 @@ export function createOrchestrator(store: TripStore) {
 
     switch (intent.kind) {
       case "dismiss":
+        riskEngine.feedback("dismissed", Date.now());
         sendToPhone({ type: "dismissed" });
         driverQueue.enqueue({ text: ackLine("dismissed"), context: "info" });
         if (roast.active) await resolveRoast(text);
         return;
       case "yes":
         if (context === "checkin") {
+          riskEngine.feedback("confirmed", Date.now());
           sendToPhone({ type: "navigate", query: "rest stop" });
           driverQueue.enqueue({ text: ackLine("navigating"), context: "info", priority: true });
           return;

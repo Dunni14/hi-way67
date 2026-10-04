@@ -27,11 +27,11 @@ The Android app is not in the repository. Any feature that lives on the phone is
 
 | Feature | Status | Notes |
 |---|---|---|
-| Feature vector **x**, two weight vectors, base risk `r = w · x` | Not started | Phone-side. The backend receives the final `R`, `drowsy`, `reckless` and stores the optional `features` map without reading it. |
-| Context/speed multiplier `m` | Not started | Phone-side. The backend applies kids-in-car only as a tier bump (see §4), not as a multiplier. |
-| Hand-set weights | Not started | Phone-side. |
-| "I'm fine" gradient step on **w** | Partial | Backend recognizes the phrase and sends `{"type":"dismissed"}`. Applying the nudge and showing weights on a debug screen is phone work and not started. |
-| Ridge regression fitting | Not started | Roadmap in the README too. |
+| Feature vector **x**, two weight vectors, base risk `r = w · x` | Done (backend) | `backend/src/risk/`. 11 features (deviations split by direction). Used when the phone sends `sensor_sample`. See [risk-engine.md](risk-engine.md). |
+| Context multiplier `m` | Done (backend) | `m = 1 + 0.25·kids + 0.15·low_experience`, plus the tier bump in §4. |
+| Hand-set weights | Done (backend) | `DEFAULT_WEIGHTS` in `risk/score.ts`. |
+| "I'm fine" gradient step on **w** | Done (backend) | `riskEngine.feedback()`; "yes" to the rest stop nudges the other way. In memory only. Debug screen not started. |
+| Ridge regression fitting | Partial | `fitWeights()` exists and is tested. No labeled data or caller yet. |
 
 ## 4. Decision tree
 
@@ -39,10 +39,10 @@ The tree is split between phone and backend. See [architecture.md](architecture.
 
 | Rule | Status | Where |
 |---|---|---|
-| Tier thresholds 40 / 70 / 85, drowsy vs reckless dominance | Not started | Phone decides and sends `alert`. |
-| 15 s hold before firing | Not started | Phone. |
-| 2 min cooldown per tier | Not started | Phone. The backend has **no** cooldown of its own; every `alert` it receives is acted on. |
-| "70+ sustained for 2 minutes" escalates to 85 | Not started | Phone. |
+| Tier thresholds 40 / 70 / 85, drowsy vs reckless dominance | Done (backend) | `risk/tree.ts`. Legacy phones can still send `alert`. |
+| 15 s hold before firing | Done (backend) | `risk/tree.ts` |
+| 2 min cooldown per tier | Done (engine path) | Also silences lower tiers. Legacy `alert` frames still have no cooldown. |
+| "70+ sustained for 2 minutes" escalates to 85 | Done (backend) | `risk/tree.ts` |
 | R < 40: log only | Done | Every `risk_window` is stored; no action. |
 | 40 / 70: voice only, never the group chat | Done | `orchestrator.ts` `onAlert`. |
 | Kids in car: 70 treated as 85 | Done | `orchestrator.ts` `onAlert`. |

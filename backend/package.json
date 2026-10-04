@@ -8,6 +8,7 @@
     "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
     "smoke:tts": "tsx --env-file-if-exists=.env src/dev/smokeTts.ts",
     "fake-phone": "tsx --env-file-if-exists=.env src/dev/fakePhone.ts",
+    "test": "tsx --test src/risk/risk.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
