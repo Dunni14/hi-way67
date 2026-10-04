@@ -27,6 +27,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import dev.driverguardian.trip.TripController
 import dev.driverguardian.ui.DashcamScreen
+import dev.driverguardian.ui.DriverGuardianColors
 import dev.driverguardian.ui.PlaceholderScreen
 import dev.driverguardian.ui.TabBar
 import dev.driverguardian.ui.DebugScreen
@@ -47,7 +48,7 @@ class MainActivity : ComponentActivity() {
         vm.onNavigate = { q ->
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=" + Uri.encode(q))).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
-        setContent { MaterialTheme(colorScheme = androidx.compose.material3.darkColorScheme()) { Root() } }
+        setContent { MaterialTheme(colorScheme = DriverGuardianColors) { Root() } }
     }
 
     @Composable

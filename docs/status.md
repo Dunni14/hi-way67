@@ -70,7 +70,7 @@ The tree is split between phone and backend. See [architecture.md](architecture.
 | Listen 5 s after a message, relay reply | Built | Frontend runs `SpeechRecognizer` for `listenAfterMs` and sends `utterance` with the same `context`. Needs the mic permission. |
 | Roasts go through immediately at high drowsiness | Done | Roasts are enqueued as priority. |
 | Family messages go through immediately at high drowsiness | Not started | Normal family messages are always queued in order, regardless of risk. |
-| Full-screen hands-free dashcam UI | Built | Portrait, wireframe layout: status pill (speaking / listening / yawn / can't see driver), speed vs limit, attention · eye tracking · drowsiness · speech tiles, drive/stats/contacts/settings tabs; only Drive while moving. |
+| Full-screen hands-free dashcam UI | Built | Portrait, styled after the Figma "UI" design (light theme, icon tab bar): status pill (speaking / listening / yawn / can't see driver), speed vs limit, camera card (a map in the design), attention · drowsiness · eye tracking · speech tiles, drive/stats/contacts/settings tabs; only Drive while moving. Not yet checked on a device. |
 
 ## 6. Photon iMessage agent
 
