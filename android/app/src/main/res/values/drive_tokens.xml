@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Drive screen design tokens. Eyeballed from the mockup: correct them here (check against Figma). -->
+<resources>
+    <color name="drive_bg">#EEF4FB</color>
+    <color name="drive_card">#FFFFFF</color>
+    <color name="drive_great">#2EAD4B</color>
+    <color name="drive_good">#2F6BDE</color>
+    <color name="drive_ok">#E0A100</color>
+    <color name="drive_bad">#F25C5C</color>
+    <color name="drive_on_bad">#FFFFFF</color>
+    <color name="drive_icon">#2F6BDE</color>
+    <color name="drive_label">#3A4658</color>
+    <color name="drive_speed_over">#E5484D</color>
+    <color name="drive_route">#1E88FF</color>
+    <color name="drive_route_casing">#0B5ED7</color>
+    <color name="drive_banner_1">#E0A100</color>
+    <color name="drive_banner_2">#F28C28</color>
+    <color name="drive_banner_3">#E5484D</color>
+
+    <dimen name="drive_screen_padding">16dp</dimen>
+    <dimen name="drive_gap">12dp</dimen>
+    <dimen name="drive_card_radius">20dp</dimen>
+    <dimen name="drive_map_radius">24dp</dimen>
+    <dimen name="drive_header_min_height">96dp</dimen>
+    <dimen name="drive_box_min_height">84dp</dimen>
+    <dimen name="drive_map_min_height">200dp</dimen>
+    <dimen name="drive_nav_height">64dp</dimen>
+    <dimen name="drive_icon_size">28dp</dimen>
+
+    <dimen name="drive_text_label">12sp</dimen>
+    <dimen name="drive_text_value">22sp</dimen>
+    <dimen name="drive_text_speed">40sp</dimen>
+</resources>

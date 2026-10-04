@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="drive_title">Drive</string>
+    <string name="drive_current_speed">current speed</string>
+    <string name="drive_speed_limit">speed limit</string>
+    <string name="drive_no_limit">--</string>
+    <string name="drive_limit_fallback_desc">Estimated limit by road type</string>
+    <string name="drive_trip_driving">Driving</string>
+    <string name="drive_trip_monitoring">Monitoring</string>
+    <string name="drive_trip_stopped">Stopped</string>
+    <string name="drive_trip_no_gps">No GPS</string>
+    <string name="drive_map_no_token">Map unavailable: add your Mapbox public token as the string mapbox_access_token in res/values/mapbox_access_token.xml</string>
+    <string name="drive_nav_drive">Drive</string>
+    <string name="drive_nav_stats">Stats</string>
+    <string name="drive_nav_contacts">Contacts</string>
+    <string name="drive_nav_settings">Settings</string>
+    <string name="drive_nav_soon">Coming soon</string>
+    <string name="drive_box_attention">Attention</string>
+    <string name="drive_box_distraction">Distraction</string>
+    <string name="drive_box_eyes">Eye Tracking</string>
+    <string name="drive_box_speech">Speech</string>
+    <string name="drive_level_great">Great</string>
+    <string name="drive_level_good">Good</string>
+    <string name="drive_level_ok">OK</string>
+    <string name="drive_level_bad">Bad</string>
+    <string name="drive_banner_1">Stay alert</string>
+    <string name="drive_banner_2">Take a break soon</string>
+    <string name="drive_banner_3">Pull over now</string>
+</resources>

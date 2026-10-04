@@ -44,6 +44,9 @@ android {
             )
         }
     }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true // Robolectric view tests
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -63,4 +66,15 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
     implementation("androidx.camera:camera-view:1.3.1")
     implementation("com.presagetech:smartspectra:3.4.0")
+
+    // Drive screen
+    implementation("com.mapbox.maps:android-ndk27:11.32.0") // -ndk27: 16 KB page size support, needed at targetSdk 36
+    implementation("com.google.android.material:material:1.13.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.6.2")
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
+    testImplementation("org.robolectric:robolectric:4.16")
+    testImplementation("androidx.test:core-ktx:1.6.1")
+    testImplementation("androidx.test.ext:junit:1.2.1")
 }

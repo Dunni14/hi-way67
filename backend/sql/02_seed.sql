@@ -116,7 +116,10 @@ INSERT INTO settings (key, value, note) VALUES
   ('gps_trip_start_hold_seconds', '20',    '... for this long'),
   ('gps_trip_stop_speed_mps',     '1',     'A trip ends when speed stays under this ...'),
   ('gps_trip_stop_hold_seconds',  '300',   '... for this long. Also the stopped threshold: no speeding or erratic scoring under it'),
-  ('gps_stale_fix_seconds',       '60',    'Tell contacts when the last fix is older than this')
+  ('gps_stale_fix_seconds',       '60',    'Tell contacts when the last fix is older than this'),
+  -- Drive screen status boxes (Android). Hand-set. A 0..1 level under great is GREAT, under good GOOD, under ok OK, else BAD.
+  -- The app ships the same defaults (LevelCutoffs in DriveModels.kt) until it reads them from here.
+  ('drive_box_level_cutoffs',     '{"great": 0.25, "good": 0.5, "ok": 0.75}', 'Level to GREAT / GOOD / OK / BAD for the Drive screen boxes')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, note = EXCLUDED.note;
 
 -- ---------------------------------------------------------------------
