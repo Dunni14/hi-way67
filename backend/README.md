@@ -17,4 +17,5 @@ npm run fake-phone                                # in a second terminal: simula
 - [Full documentation](../docs/README.md)
 - [Implementation status and known issues](../docs/status.md)
 - [Backend setup, env vars, module reference](../docs/backend.md)
+- [Risk engine](../docs/risk-engine.md) (scoring model, tiers, overrides, weights)
 - [WebSocket protocol](../docs/protocol.md) (short version: [PROTOCOL.md](PROTOCOL.md))

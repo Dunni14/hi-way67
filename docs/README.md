@@ -11,6 +11,7 @@ Technical documentation for the code in this repository. The product pitch, trac
 | [status.md](status.md) | Feature-by-feature implementation status against the root README, plus known issues |
 | [architecture.md](architecture.md) | Components, data flow, who owns which part of the decision tree |
 | [backend.md](backend.md) | Setup, environment variables, scripts, module reference |
+| [risk-engine.md](risk-engine.md) | Backend risk model: signal levels, logistic score, tiers, overrides, per-driver weights |
 | [protocol.md](protocol.md) | Phone ↔ backend WebSocket contract, with example frames and sequences |
 | [imessage-agent.md](imessage-agent.md) | Photon Spectrum agent: roles, message classification, the four flows, the roast, sharing modes |
 | [voice.md](voice.md) | ElevenLabs TTS, tiered delivery, the driver speech queue, spoken lines, driver intent parsing |
@@ -26,7 +27,8 @@ Technical documentation for the code in this repository. The product pitch, trac
 | ElevenLabs tiered voice and driver speech queue | **Done** (backend side) |
 | Dev tools (`fake-phone`, `smoke:tts`) | **Done** |
 | Tiger Data persistence | **Stub**: in-memory only, lost on restart |
-| Android app (Presage, risk score, decision tree, GPS, STT, audio playback) | **Not started** (not in repo) |
+| Risk engine (levels, logistic score, tiers, overrides) | **Partial**: pure module with tests, not wired into the orchestrator. See [risk-engine.md](risk-engine.md) |
+| Android app (Presage, GPS, STT, audio playback) | **Not started** (not in repo) |
 | "I'm fine" weight nudge | **Partial**: backend sends `dismissed`; the nudge itself belongs to the phone |
 | Pre-trip check, report card, surroundings/weather, alarm audio, Fetch.ai agent | **Not started** |
 
@@ -47,6 +49,7 @@ auto-ai/
         ├── config.ts            Env access
         ├── orchestrator.ts      Phone events + chat messages -> actions
         ├── ws/                  WebSocket server and protocol schema
+        ├── risk/                Risk engine: levels, score, decision tree, weights.json
         ├── trip/                Live trip state and the persistence interface
         ├── agent/               Spectrum connection, classifier, answers, roast, contacts, driver intent
         ├── voice/               ElevenLabs TTS, speech queue, spoken line templates

@@ -25,3 +25,5 @@ Source of truth: [src/ws/protocol.ts](src/ws/protocol.ts). Health check: `GET /h
 | `error` | `message` | log it |
 
 The backend handles 85-tier escalation (iMessage alerts and the roast), the kids-in-car bump from 70 to 85, and reading family messages aloud. The phone only reports.
+
+> Risk scoring is moving to the backend ([risk engine](../docs/risk-engine.md)). A raw `SignalWindow` frame will replace `risk_window` / `alert`; it is not in `src/ws/protocol.ts` yet, so keep sending `R`, `tier` and `alert` for now.

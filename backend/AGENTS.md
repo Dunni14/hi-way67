@@ -9,11 +9,12 @@ Node / TypeScript backend for Driver Guardian (MHacks 26). It talks to the Andro
 - `src/ws/protocol.ts`: **source of truth** for the phone protocol. If you change it, update `PROTOCOL.md` and `../docs/protocol.md` in the same change.
 - `src/agent/`: Spectrum connection (`spectrum.ts`), classifier, answers, roast, contacts allowlist, driver intent regexes.
 - `src/voice/`: ElevenLabs TTS, the one-at-a-time driver speech queue, spoken line templates.
+- `src/risk/`: risk engine (levels → logistic score → tier → actions). Pure functions; every weight and threshold is in `weights.json`. Not yet called by the orchestrator. See `../docs/risk-engine.md`.
 - `src/trip/`: live trip state, and the `TripStore` interface. The only implementation is in-memory; Tiger Data is a TODO.
 - `src/llm/openrouter.ts`: LLM client. Every LLM call has a non-LLM fallback. Keep it that way so the demo never stalls.
 - `src/dev/`: `fakePhone.ts` (simulates the Android app) and `smokeTts.ts`.
 
-There is no Android code in this repo. Risk scoring, the decision tree's timing (hold and cooldown) and Presage all belong to the phone. The backend trusts `R` and `tier` from the phone and does not compute risk.
+There is no Android code in this repo. Presage sensing belongs to the phone. Risk scoring and the decision tree (hold, cooldown, overrides) are implemented in `src/risk/`, but the live orchestrator does not call them yet: it still trusts `R`, `tier` and `alert` frames from the phone. Do not apply the kids-in-car bump in both places once the engine is wired in.
 
 ## Commands
 
@@ -21,7 +22,8 @@ There is no Android code in this repo. Risk scoring, the decision tree's timing 
 - `NO_SPECTRUM=1 npm run dev`: phone side only, no iMessage.
 - `npm run fake-phone` runs the scripted demo. Add `-- -i` for interactive mode (`win`, `alert`, `say`, …; see `../docs/backend.md`).
 - `npm run smoke:tts`: writes one mp3 per voice tier to `out/`.
-- `npm run typecheck`: run this after every change. There is no test suite.
+- `npm run typecheck`: run this after every change.
+- `npm run test`: risk engine tests (`src/risk/*.test.ts`). Run after touching `src/risk/` or `weights.json`.
 
 TypeScript runs straight from source with `tsx`, so there is no build step. Imports use explicit `.ts` extensions (`verbatimModuleSyntax`, `allowImportingTsExtensions`). `noUncheckedIndexedAccess` is on.
 
@@ -32,6 +34,7 @@ TypeScript runs straight from source with `tsx`, so there is no build step. Impo
 - Never send location to friends: `answer.ts` filters facts by role before the LLM sees them, and guardian alerts use `post(text, "guardian")`.
 - Mid-tier (40/70) events are voice only. Never post them to the group chat.
 - Commits use Conventional Commits (`feat(backend): …`, `fix: …`, `docs: …`).
+- Risk logic changes go in `weights.json` or `src/risk/`, never in the orchestrator. Update `../docs/risk-engine.md` (formulas and constants) in the same change.
 - Always update the docs when introducing new features, or changing conventions.
 
 ## Environment and secrets

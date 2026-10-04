@@ -4,7 +4,7 @@
 
 ```
 ┌──────────────── Android app (NOT STARTED) ────────────────┐
-│ Front camera → Presage → features → risk score → tree     │
+│ Front camera → Presage → raw signal window                │
 │ GPS / IMU → speed, hard brake, swerve                     │
 │ Audio playback · speech recognition · maps intent         │
 └──────────────┬──────────────────────────────▲─────────────┘
@@ -14,6 +14,7 @@
 ┌──────────────── Backend (Node / TypeScript, DONE) ────────┐
 │ ws/server.ts ── orchestrator.ts ── voice/driverQueue.ts ──┼──► ElevenLabs TTS
 │                    │      │                               │
+│        risk/* (engine, not wired yet)                     │
 │        trip/state.ts      agent/* ────────────────────────┼──► OpenRouter LLM
 │        trip/store.ts (in-memory STUB → Tiger Data)        │
 │                           │                               │
@@ -23,7 +24,7 @@
                                                           (Telegram optional)
 ```
 
-- **Android app.** Not in the repo. It is meant to own sensing, scoring and the timing half of the decision tree. Spec: [phone-app.md](phone-app.md).
+- **Android app.** Not in the repo. It is meant to own sensing and send raw signal windows; scoring and the decision tree move to the backend risk engine. Spec: [phone-app.md](phone-app.md).
 - **Backend.** One Node process. It holds trip state, talks to the phone over a WebSocket, talks to the family chat through Spectrum, and makes every third-party API call. API keys never reach the phone.
 
 ## Backend boot sequence
@@ -37,20 +38,21 @@
 
 ## Who owns the decision tree
 
-The root README's decision tree (§4) is split in two:
+The root README's decision tree (§4) is moving from the phone to the backend. The [risk engine](risk-engine.md) implements the calculation and timing half; until it is wired in, the phone still has to send `R`, `tier` and `alert`.
 
 | Responsibility | Owner | Status |
 |---|---|---|
-| Compute `R`, `drowsy`, `reckless` every 10 s | Phone | Not started |
-| Map R to a tier (40 / 70 / 85) and pick the dominant sub-score | Phone | Not started |
-| 15 s hold, 2 min per-tier cooldown, "70 sustained 2 min → 85" | Phone | Not started |
-| Kids-in-car bump: 70 → 85 | Backend | Done |
+| Sense signals and send a window every 10 s | Phone | Not started |
+| Compute levels, `R` and the dominant sub-score (logistic score) | Backend `risk/` | Module done, not wired |
+| Map R to a tier (40 / 70 / 85) | Backend `risk/` | Module done, not wired |
+| 2-window hold, 2 min per-tier cooldown, sustained and microsleep overrides | Backend `risk/` | Module done, not wired |
+| Kids-in-car bump | Backend | Done in the orchestrator (70 → 85); the engine does its own +1 tier. Keep only one once wired. |
 | Tier → spoken line (template + ElevenLabs settings) | Backend | Done |
 | 85 → guardian alert, roast, or permission prompt depending on sharing mode | Backend | Done |
 | "I'm fine" → `dismissed` frame | Backend | Done |
-| Weight nudge on `dismissed` | Phone | Not started |
+| Weight nudge on `dismissed` | Backend `risk/` | Module done (per-driver multipliers), not wired |
 
-The phone **reports** and the backend **acts**. The backend never computes risk itself; it trusts `R` and `tier` from the phone.
+The phone **reports** and the backend **decides and acts**. Today the orchestrator still trusts `R` and `tier` from the phone; once the risk engine is wired in, it computes them from raw signal windows.
 
 ## Main data flows
 

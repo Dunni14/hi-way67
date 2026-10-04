@@ -35,6 +35,9 @@ A `risk_window` received without an active trip starts one automatically. `trip_
 
 ### `risk_window`
 Send every 10 seconds.
+
+> **Transitional.** The [risk engine](risk-engine.md) scores raw `SignalWindow`s on the backend. That frame is not in `src/ws/protocol.ts` yet; until it is, the phone keeps computing and sending `R`, `drowsy` and `reckless` here.
+
 ```json
 {
   "type": "risk_window",
@@ -56,7 +59,7 @@ Send every 10 seconds.
 | `features` | `{string: number}`, optional | Stored as-is, not interpreted |
 
 ### `alert`
-Send when the phone's decision tree fires, after its 15 s hold and cooldown.
+Send when the phone's decision tree fires, after its hold and cooldown. Once the [risk engine](risk-engine.md) is wired in, the backend decides this itself from raw signal windows and the phone stops sending `alert`.
 ```json
 { "type": "alert", "tier": 70, "dominant": "drowsy", "R": 74 }
 ```

@@ -29,6 +29,7 @@ npm run start
 | `npm run fake-phone` | Connect as a fake phone and run the scripted demo (see below) |
 | `npm run fake-phone -- -i` | Interactive fake phone |
 | `npm run smoke:tts` | Write `out/tts-{0,40,70,85}.mp3`, one per voice tier |
+| `npm run test` | `tsx --test src/risk/*.test.ts`: risk engine tests (see [risk-engine.md](risk-engine.md#tests)) |
 | `npm run typecheck` | `tsc --noEmit` |
 
 Set `NO_SPECTRUM=1` to run only the phone side (voice and protocol testing without iMessage).
@@ -127,6 +128,7 @@ The fake phone acks every `speak` with `speak_done` after 500 ms and saves its a
 | `src/orchestrator.ts` | All routing: phone frames, alerts, utterances, chat messages, trip start and end |
 | `src/ws/protocol.ts` | Zod schema for phone → backend frames, TS type for backend → phone |
 | `src/ws/server.ts` | HTTP + WebSocket server. One phone at a time; a new connection closes the old one (code 4000). |
+| `src/risk/` | Risk engine, pure and not yet wired into the orchestrator: `types.ts` (signal window, tiers, actions), `config.ts` + `weights.json` (every weight and threshold), `smoothing.ts` (rolling mean, baseline), `levels.ts` (six 0..1 levels), `score.ts` (logistic score, sleep term, per-driver multipliers), `decision.ts` (`processWindow`: hold, overrides, cooldowns, actions). See [risk-engine.md](risk-engine.md). |
 | `src/trip/state.ts` | `TripState` singleton: current trip, rolling 30 min of windows, event counts, "stopped" check, maps link |
 | `src/trip/store.ts` | `TripStore` interface + `InMemoryTripStore` (**stub**) |
 | `src/agent/spectrum.ts` | Spectrum connection, inbound routing, group capture, `post()` and `dm()` |
