@@ -20,6 +20,25 @@ export type SpeakContext = z.infer<typeof SpeakContext>;
 
 // ---- phone -> backend ------------------------------------------------------
 
+/** Raw signals for one window, named as the risk engine's SignalWindow (src/risk/types.ts). Missing = unknown. */
+export const WindowSignals = z.object({
+  face_visible: z.boolean().nullish(),
+  heart_rate: z.number().nullish(),
+  breathing_rate: z.number().nullish(),
+  engagement: z.number().nullish(),
+  eye_closure_frac: z.number().nullish(), // share of the window with eyes closed, 0..1
+  longest_eye_closure_s: z.number().nullish(), // longest continuous closure in the window
+  yawns: z.number().nullish(),
+  emotion_stress: z.number().nullish(),
+  gaze_off_road_s: z.number().nullish(),
+  phone_in_hand: z.boolean().nullish(),
+  hard_brakes: z.number().nullish(),
+  swerves: z.number().nullish(),
+  speed_mph: z.number().nullish(),
+  speed_limit_mph: z.number().nullish(),
+});
+export type WindowSignals = z.infer<typeof WindowSignals>;
+
 export const PhoneMsg = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("hello"),
@@ -34,23 +53,16 @@ export const PhoneMsg = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("trip_start") }),
   z.object({ type: z.literal("trip_end") }),
+  // One 10 s window of raw driver signals. The backend's risk engine scores it
+  // (src/risk) and decides every alert; the phone only senses and displays.
   z.object({
     type: z.literal("risk_window"),
-    ts: z.number(), // epoch ms, end of the 10 s window
-    R: z.number(), // 0..100 combined risk
-    drowsy: z.number(), // drowsy sub-score 0..100
-    reckless: z.number(), // reckless sub-score 0..100
+    ts: z.number(), // epoch ms (real time), end of the window
     speed: z.number().default(0), // mph
     lat: z.number().optional(),
     lon: z.number().optional(),
     events: z.array(DriverEvent).default([]),
-    features: z.record(z.string(), z.number()).optional(),
-  }),
-  z.object({
-    type: z.literal("alert"),
-    tier: Tier,
-    dominant: Dominant,
-    R: z.number(),
+    signals: WindowSignals,
   }),
   // Speech-to-text result. `context` echoes the `speak.context` the phone was
   // listening after, or "free" for push-to-talk / wake word.
@@ -77,5 +89,19 @@ export type BackendMsg =
       context: SpeakContext;
     }
   | { type: "navigate"; query: string }
-  | { type: "dismissed" }
+  // Driver said "I'm fine": the engine lowered the dominant factor's weight for this driver.
+  | { type: "dismissed"; factor?: string; multiplier?: number }
+  // The risk engine's verdict on a risk_window (same ts), for the phone to display.
+  | {
+      type: "evaluation";
+      ts: number;
+      score: number; // 0..100
+      tier: 0 | 1 | 2 | 3;
+      dominant: Dominant;
+      levels: Record<string, number>; // drowsy, agitated, speeding, phone, distracted, erratic (0..1)
+      override: string | null; // microsleep, drowsy_sustained_3, …
+      degraded: boolean; // face hidden for several windows: scoring on speed and motion only
+      actions: string[]; // voice_nudge, voice_warning, voice_urgent, notify_contacts, …
+      calibrating: boolean; // still inside the engine's baseline windows
+    }
   | { type: "error"; message: string };

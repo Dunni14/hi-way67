@@ -13,6 +13,8 @@ import { parseDriverUtterance } from "./agent/driverIntent.ts";
 import { roast } from "./agent/roast.ts";
 import { allContacts } from "./agent/contacts.ts";
 import type { Evaluation } from "./risk/types.ts";
+import type { RiskService } from "./risk/service.ts";
+import { riskConfig } from "./risk/config.ts";
 import type { Intervention } from "./bandit/service.ts";
 import { config } from "./config.ts";
 
@@ -26,6 +28,16 @@ export function createOrchestrator(store: TripStore) {
   const setInsights = (fn: () => Promise<string[]>) => {
     insights = fn;
   };
+
+  // The risk engine scores every phone window and decides every alert (via onRiskEvaluation).
+  let risk: RiskService | null = null;
+  const setRisk = (r: RiskService) => {
+    risk = r;
+  };
+  // Engine trip for the current phone trip (created on trip_start), and the last window it scored.
+  let engineTrip: Promise<string | null> | null = null;
+  let lastWindowTs: string | null = null;
+  let windowsScored = 0;
 
   // ---- phone -> backend ----------------------------------------------------
 
@@ -49,17 +61,8 @@ export function createOrchestrator(store: TripStore) {
       case "trip_end":
         return onTripEnd();
 
-      case "risk_window": {
-        if (!trip.active) onTripStart();
-        const { type: _, features, ...w } = msg;
-        trip.addWindow(w);
-        if (w.events.includes("hard_brake")) driverQueue.pause();
-        await store.saveWindow({ tripId: trip.tripId!, ...w, features }).catch((err) => console.error("[store] saveWindow:", err));
-        return;
-      }
-
-      case "alert":
-        return onAlert(msg.tier, msg.dominant, msg.R);
+      case "risk_window":
+        return onRiskWindow(msg);
 
       case "utterance":
         return onUtterance(msg.text, msg.context);
@@ -70,11 +73,51 @@ export function createOrchestrator(store: TripStore) {
     }
   }
 
+  /** Score one phone window in the engine; its hook (onRiskEvaluation) handles voice and contacts. */
+  async function onRiskWindow(msg: Extract<PhoneMsg, { type: "risk_window" }>) {
+    if (!trip.active) await onTripStart();
+    if (msg.events.includes("hard_brake")) driverQueue.pause();
+    const tripId = await engineTrip;
+    if (!risk || !tripId) {
+      console.warn("[risk] no risk engine; window not scored");
+      return;
+    }
+    const ts = new Date(msg.ts).toISOString();
+    let ev: Evaluation;
+    try {
+      ev = await risk.ingestWindow(tripId, { ...msg.signals, speed_mph: msg.signals.speed_mph ?? msg.speed, ts });
+    } catch (err) {
+      console.error("[risk] window rejected:", (err as Error).message);
+      return;
+    }
+    lastWindowTs = ts;
+    windowsScored++;
+    const { drowsy, ...rest } = ev.levels;
+    // Live view for chat answers and the roast text, on the 0..100 scale.
+    trip.addWindow({
+      ts: msg.ts, R: ev.score, drowsy: drowsy * 100, reckless: Math.max(...Object.values(rest)) * 100,
+      speed: msg.speed, lat: msg.lat, lon: msg.lon, events: msg.events,
+    });
+    sendToPhone({
+      type: "evaluation", ts: msg.ts, score: ev.score, tier: ev.tier, dominant: ev.dominant, levels: ev.levels,
+      override: ev.override, degraded: ev.degraded, actions: ev.actions,
+      calibrating: windowsScored <= riskConfig.baselineWindows,
+    });
+  }
+
   async function onTripStart() {
     if (trip.active) return;
     trip.start();
+    lastWindowTs = null;
+    windowsScored = 0;
+    engineTrip = risk
+      ? risk
+          .startTrip({ driver_id: d(), kids_in_car: trip.kidsInCar, low_experience: false, sharing_mode: trip.sharingMode })
+          .then((r) => r.trip_id)
+          .catch((err) => (console.error("[risk] startTrip:", err), null))
+      : Promise.resolve(null);
     await store.startTrip({ tripId: trip.tripId!, driverName: d(), startedAt: trip.startedAt, maxR: 0, alerts: 0 });
-    console.log(`[trip] started ${trip.tripId}`);
+    console.log(`[trip] started ${trip.tripId} (engine trip ${await engineTrip})`);
     if (trip.sharingMode !== "always") return;
 
     let note = `🚗 ${d()} just started driving.`;
@@ -91,6 +134,9 @@ export function createOrchestrator(store: TripStore) {
     const minutes = trip.drivingMinutes();
     const summary = `🏁 ${d()} arrived safely. ${minutes} min drive, ${trip.alertCount} warning${trip.alertCount === 1 ? "" : "s"}, peak risk ${Math.round(trip.maxR)}/100.`;
     await store.endTrip(trip.tripId!, { endedAt: Date.now(), maxR: trip.maxR, alerts: trip.alertCount });
+    const tripId = await engineTrip;
+    if (risk && tripId) await risk.endTrip(tripId).catch((err) => console.error("[risk] endTrip:", err));
+    engineTrip = null;
     trip.end();
     roast.resolve();
     driverQueue.clear();
@@ -197,11 +243,18 @@ export function createOrchestrator(store: TripStore) {
     }
 
     switch (intent.kind) {
-      case "dismiss":
-        sendToPhone({ type: "dismissed" });
+      case "dismiss": {
+        // Tell the engine this alert was a false alarm: it eases this driver's dominant factor.
+        const tripId = await engineTrip;
+        const fb = risk && tripId && lastWindowTs
+          ? await risk.feedback(tripId, { window_ts: lastWindowTs, verdict: "false_alarm" }).catch((err) => (console.error("[risk] feedback:", err), null))
+          : null;
+        if (fb) console.log(`[risk] false alarm: ${fb.factor} weight now x${fb.multiplier.toFixed(2)}`);
+        sendToPhone({ type: "dismissed", factor: fb?.factor, multiplier: fb?.multiplier });
         driverQueue.enqueue({ text: ackLine("dismissed"), context: "info" });
         if (roast.active) await resolveRoast(text);
         return;
+      }
       case "yes":
         if (context === "checkin") {
           sendToPhone({ type: "navigate", query: "rest stop" });
@@ -270,7 +323,7 @@ export function createOrchestrator(store: TripStore) {
     }
   }
 
-  return { onPhone, onChat, onRiskEvaluation, setInsights };
+  return { onPhone, onChat, onRiskEvaluation, setInsights, setRisk };
 }
 
 function isNight(date: Date) {

@@ -1,19 +1,21 @@
 // Plays the Android app so the backend can be tested without it.
-//   npm run fake-phone             scripted demo run
+//   npm run fake-phone             scripted demo run (calm -> drowsy -> microsleep)
 //   npm run fake-phone -- -i       interactive: type commands (see HELP)
-// Received `speak` audio is saved to out/speak-N.mp3 and acked with speak_done.
+// Sends raw-signal risk_windows like the app; the backend's risk engine scores them and decides
+// every alert. Received `speak` audio is saved to out/speak-N.mp3 and acked with speak_done.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import WebSocket from "ws";
 
 const url = process.env.PHONE_WS_URL ?? `ws://localhost:${process.env.PORT ?? 8787}/phone`;
 const interactive = process.argv.includes("-i");
-const HELP = `commands: start | end | win <R> [yawn,nod,...] | alert <40|70|85> [drowsy|reckless] | say <text> [as <context>] | share <always|high_only|never> | kids <on|off> | quit`;
+const HELP = `commands: start | end | win <calm|drowsy|micro|angry> [count] | say <text> [as <context>] | share <always|high_only|never> | kids <on|off> | quit`;
 
 mkdirSync("out", { recursive: true });
 const ws = new WebSocket(url);
 let speakCount = 0;
 let lastContext = "free";
+let lastTs = 0;
 
 const send = (msg: object) => {
   console.log("→", JSON.stringify(msg));
@@ -21,8 +23,24 @@ const send = (msg: object) => {
 };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-const win = (R: number, events: string[] = [], speed = 68) =>
-  send({ type: "risk_window", ts: Date.now(), R, drowsy: R, reckless: R / 3, speed, lat: 42.2808, lon: -83.743, events });
+type Kind = "calm" | "drowsy" | "micro" | "angry";
+/** Raw signals for one 10 s window, the same shape the app sends. */
+function signals(kind: Kind) {
+  const base = {
+    face_visible: true, heart_rate: 72, breathing_rate: 15, eye_closure_frac: 0.05, longest_eye_closure_s: 0.3,
+    yawns: 0, emotion_stress: 0.05, hard_brakes: 0, swerves: 0, speed_mph: 65, speed_limit_mph: 65,
+  };
+  if (kind === "drowsy" || kind === "micro") Object.assign(base, { heart_rate: 64, breathing_rate: 10.5, eye_closure_frac: 0.4, yawns: 1 });
+  if (kind === "micro") base.longest_eye_closure_s = 2.2;
+  if (kind === "angry") Object.assign(base, { heart_rate: 98, emotion_stress: 0.8, speed_mph: 84, hard_brakes: 1 });
+  return base;
+}
+
+const win = (kind: Kind) => {
+  lastTs = Math.max(Date.now(), lastTs + 1); // unique, increasing window timestamps
+  const events = kind === "drowsy" || kind === "micro" ? ["yawn"] : kind === "angry" ? ["hard_brake"] : [];
+  send({ type: "risk_window", ts: lastTs, speed: signals(kind).speed_mph, lat: 42.2808, lon: -83.743, events, signals: signals(kind) });
+};
 
 ws.on("message", (data) => {
   const msg = JSON.parse(data.toString());
@@ -32,6 +50,8 @@ ws.on("message", (data) => {
     lastContext = msg.listenAfterMs > 0 ? msg.context : "free";
     console.log(`← speak [tier ${msg.tier}, ${msg.context}${msg.listenAfterMs ? ", listening" : ""}] "${msg.text}"${msg.audio ? ` → ${file}` : " (no audio)"}`);
     setTimeout(() => ws.send(JSON.stringify({ type: "speak_done", id: msg.id })), 500);
+  } else if (msg.type === "evaluation") {
+    console.log(`← evaluation tier ${msg.tier} score ${msg.score} drowsy ${msg.levels.drowsy.toFixed(2)}${msg.override ? ` override=${msg.override}` : ""}${msg.calibrating ? " (calibrating)" : ""} actions=${msg.actions.join(",")}`);
   } else {
     console.log("←", JSON.stringify(msg));
   }
@@ -41,17 +61,13 @@ ws.on("open", async () => {
   send({ type: "hello", driverName: "Alex", sharingMode: "always", kidsInCar: false });
   if (interactive) return repl();
 
+  // Same profile as the app's demo mode: baseline, calm, drowsy (tier 2 after 3 drowsy windows), microsleep (tier 3).
   send({ type: "trip_start" });
-  for (let i = 0; i < 3; i++) (win(20), await sleep(300));
-  win(45, ["yawn"]);
-  send({ type: "alert", tier: 40, dominant: "drowsy", R: 45 });
-  await sleep(4000);
+  const plan: Kind[] = [...Array(13).fill("calm"), ...Array(12).fill("drowsy"), "micro", ...Array(3).fill("drowsy")];
+  for (const kind of plan) { win(kind); await sleep(400); }
+  await sleep(1500);
   send({ type: "utterance", text: "I'm fine", context: "checkin" });
-  await sleep(2000);
-  win(88, ["yawn", "nod"]);
-  win(90, ["yawn"]);
-  send({ type: "alert", tier: 85, dominant: "drowsy", R: 90 });
-  console.log("\nScripted run sent. Now roast from the group chat; Ctrl+C to exit.\n");
+  console.log("\nScripted run sent. Roast from the group chat; Ctrl+C to exit.\n");
 });
 
 async function repl() {
@@ -62,8 +78,11 @@ async function repl() {
     switch (cmd) {
       case "start": send({ type: "trip_start" }); break;
       case "end": send({ type: "trip_end" }); break;
-      case "win": win(Number(rest[0] ?? 20), rest[1]?.split(",") ?? []); break;
-      case "alert": send({ type: "alert", tier: Number(rest[0] ?? 40), dominant: rest[1] ?? "drowsy", R: Number(rest[0] ?? 40) + 5 }); break;
+      case "win": {
+        const kind = (rest[0] ?? "calm") as Kind;
+        for (let i = 0; i < Number(rest[1] ?? 1); i++) { win(kind); await sleep(200); }
+        break;
+      }
       case "say": {
         const asIdx = rest.indexOf("as");
         const text = (asIdx >= 0 ? rest.slice(0, asIdx) : rest).join(" ");
