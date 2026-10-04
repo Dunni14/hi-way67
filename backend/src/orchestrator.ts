@@ -4,6 +4,7 @@ import { trip } from "./trip/state.ts";
 import type { TripStore } from "./trip/store.ts";
 import type { PhoneMsg, Tier, Dominant } from "./ws/protocol.ts";
 import { sendToPhone } from "./ws/server.ts";
+import { currentDemoSpeed } from "./http/demo.ts";
 import { driverQueue } from "./voice/driverQueue.ts";
 import { ackLine, alertLine, ASKS_REST_STOP, gradeOf, interventionLine, messageLine, permissionLine, roastLine, speedingNudge } from "./voice/lines.ts";
 import { post, dm, postImage, dmImage, hasGroup, type Inbound } from "./agent/spectrum.ts";
@@ -53,6 +54,8 @@ export function createOrchestrator(store: TripStore, restStops = new RestStopFin
         trip.kidsInCar = msg.kidsInCar;
         trip.shareLocation = msg.shareLocation;
         console.log(`[phone] hello: ${trip.driverName}, sharing=${trip.sharingMode}, kids=${trip.kidsInCar}`);
+        // A phone that connects mid-demo picks up the slider's current speed.
+        if (currentDemoSpeed() != null) sendToPhone({ type: "demo_speed", mph: currentDemoSpeed()! });
         return;
 
       case "settings":

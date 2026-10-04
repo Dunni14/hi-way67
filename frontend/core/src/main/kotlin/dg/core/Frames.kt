@@ -161,6 +161,8 @@ sealed interface BackendFrame {
         val image: String,
     ) : BackendFrame
     data class Navigate(val query: String) : BackendFrame
+    /** Demo control (the backend's /demo slider): the speed to report from now on while in demo mode. */
+    data class DemoSpeed(val mph: Double) : BackendFrame
     data class Error(val message: String) : BackendFrame
     /** A line to say to the driver. [audio] is base64 mp3, empty if TTS failed (fall back to on-device TTS). */
     data class Speak(
@@ -232,6 +234,7 @@ fun decodeBackendFrame(text: String): BackendFrame {
             image = str("image") ?: "",
         )
         "navigate" -> BackendFrame.Navigate(str("query") ?: "rest stop")
+        "demo_speed" -> num("mph")?.takeIf { it.isFinite() && it >= 0 }?.let { BackendFrame.DemoSpeed(it) } ?: BackendFrame.Unknown(type)
         "error" -> BackendFrame.Error(str("message") ?: "")
         "speak" -> {
             val id = str("id") ?: return BackendFrame.Unknown(type)

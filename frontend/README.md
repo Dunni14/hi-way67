@@ -23,7 +23,7 @@ first alert, then 1.5×) but stamps them in real time, so the engine's window-co
 stay real. With the engine's rules that gives a tier-2 warning at about 0:15 (answerable: say "I'm fine") and a
 microsleep tier 3 (urgent voice, alarm, contacts) at about 1:08. `./gradlew :core:test` writes
 `core/build/demo-windows.json`; `npx tsx src/dev/replayDemo.ts` in `../backend` replays it through the real engine.
-Turn demo mode off to use the real camera (Presage), GPS and IMU.
+The demo speed starts at 65 mph and can be changed live from a laptop: open `http://<backend-host>:8787/demo` and move the slider. Turn demo mode off to use the real camera (Presage), GPS and IMU.
 
 Allow the microphone on first launch so spoken check-ins can hear "I'm fine" and roast replies. Logs: `adb logcat -s Presage Voice`.
 

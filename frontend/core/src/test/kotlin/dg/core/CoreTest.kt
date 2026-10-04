@@ -90,6 +90,8 @@ class CoreTest {
         assertEquals(BackendFrame.Dismissed(), decodeBackendFrame("""{"type":"dismissed"}"""))
         assertEquals(BackendFrame.Dismissed("drowsy", 0.95), decodeBackendFrame("""{"type":"dismissed","factor":"drowsy","multiplier":0.95}"""))
         assertEquals(BackendFrame.Navigate("rest stop"), decodeBackendFrame("""{"type":"navigate","query":"rest stop"}"""))
+        assertEquals(BackendFrame.DemoSpeed(82.0), decodeBackendFrame("""{"type":"demo_speed","mph":82}"""))
+        assertEquals(BackendFrame.Unknown("demo_speed"), decodeBackendFrame("""{"type":"demo_speed","mph":-5}"""))
     }
 
     @Test fun reportDecodes() {

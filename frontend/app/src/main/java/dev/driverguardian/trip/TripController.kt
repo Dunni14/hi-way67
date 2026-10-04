@@ -178,7 +178,8 @@ class TripController(app: Application) : AndroidViewModel(app) {
         val agg = WindowAggregator()
         val source = if (demo) FakePresageSource(c) else SmartSpectraPresageSource(getApplication())
         if (demo) {
-            agg.onMotion(DemoScript.DEMO_SPEED_MPH, 42.2808, -83.743)
+            demoAgg = agg
+            agg.onMotion(demoSpeedMph, DEMO_LAT, DEMO_LON)
         } else {
             motion = MotionSource(getApplication(),
                 onMotion = { mph, lat, lon -> viewModelScope.launch { speed.add(mph); agg.onMotion(mph, lat, lon) } },
@@ -225,6 +226,7 @@ class TripController(app: Application) : AndroidViewModel(app) {
     fun endTrip() {
         val wasRunning = tripJob != null
         tripJob?.cancel(); tripJob = null
+        demoAgg = null
         motion?.stop(); motion = null
         alarm.stop()
         client.send(PhoneFrame.TripEnd)
@@ -269,6 +271,20 @@ class TripController(app: Application) : AndroidViewModel(app) {
         )
     }
 
+    // Demo mode's speed. The backend's /demo slider changes it; it stays for later demo trips.
+    private var demoSpeedMph = DemoScript.DEMO_SPEED_MPH
+    private var demoAgg: WindowAggregator? = null
+
+    /** The demo slider moved. Only a demo trip uses it; real trips keep reading the GPS. */
+    private fun onDemoSpeed(mph: Double) {
+        demoSpeedMph = mph.coerceIn(0.0, 150.0)
+        val agg = demoAgg ?: return
+        if (tripJob == null || !tripDemo) return
+        agg.onMotion(demoSpeedMph, DEMO_LAT, DEMO_LON)
+        speed.add(demoSpeedMph)
+        _ui.value = _ui.value.copy(speedMph = demoSpeedMph) // show it now, not at the next window
+    }
+
     private fun onBackend(f: BackendFrame) {
         viewModelScope.launch {
             when (f) {
@@ -280,6 +296,7 @@ class TripController(app: Application) : AndroidViewModel(app) {
                 is BackendFrame.Speak -> voice.play(f)
                 is BackendFrame.Report -> _sharedReport.value = f
                 is BackendFrame.Navigate -> onNavigate(f.query)
+                is BackendFrame.DemoSpeed -> onDemoSpeed(f.mph)
                 is BackendFrame.Error -> { android.util.Log.w("Backend", f.message); onContactsFrame(f) }
                 is BackendFrame.Contacts, is BackendFrame.ContactInvite, is BackendFrame.ContactJoined -> onContactsFrame(f)
                 else -> {}
@@ -329,6 +346,8 @@ class TripController(app: Application) : AndroidViewModel(app) {
 
     companion object {
         const val WINDOW_MS = 10_000L
+        const val DEMO_LAT = 42.2808 // Ann Arbor: where the scripted demo drive "is"
+        const val DEMO_LON = -83.743
         const val CALIBRATION_MS = 60_000L // the engine's 6 baseline windows
     }
 }

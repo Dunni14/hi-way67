@@ -134,6 +134,7 @@ The tree is split between phone and backend. See [architecture.md](architecture.
 - **OpenRouter** handles the LLM calls (classify, answer, shorten). A model can be set per job in `.env`.
 - **Telegram** provider, so you can test without iMessage access.
 - **`fake-phone`** dev client that plays the Android app (scripted or interactive).
+- **Demo speed slider**: a web page served by the backend at `/demo` sets the speed a phone in demo mode reports (a `demo_speed` frame), so speeding can be shown live. Checked in a browser against a simulated phone; not yet checked on a device.
 - **Demo mode** in the frontend: scripted driver signals at a fake 65 mph.
 - **`/start`** command in a group chat binds the agent to that group, and the binding is saved across restarts. **`/start <code>`** in a DM redeems a contact invite from the app.
 - **`GET /health`** status endpoint.
