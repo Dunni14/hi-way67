@@ -78,6 +78,25 @@ sealed interface PhoneFrame {
     /** Finished playing a `speak` (and its listen window). */
     @Serializable @SerialName("speak_done")
     data class SpeakDone(val id: String) : PhoneFrame
+
+    /** Allowlist a contact. [platform] "telegram" answers with [BackendFrame.ContactInvite]; "imessage" is not available yet. */
+    @Serializable @SerialName("contact_add")
+    data class ContactAdd(
+        val name: String,
+        val role: String, // "guardian" | "friend"
+        val platform: String, // "telegram" | "imessage"
+        val phone: String? = null,
+    ) : PhoneFrame
+
+    @Serializable @SerialName("contact_remove")
+    data class ContactRemove(val handle: String) : PhoneFrame
+
+    /** Guardian toggle: guardians also get the location and guardian-only alerts. */
+    @Serializable @SerialName("contact_update")
+    data class ContactUpdate(val handle: String, val role: String) : PhoneFrame
+
+    @Serializable @SerialName("contacts_list")
+    data object ContactsList : PhoneFrame
 }
 
 /** Raw signals for one window, named like the risk engine's SignalWindow. Null = unknown (left out of the JSON). */
@@ -152,8 +171,20 @@ sealed interface BackendFrame {
         val listenAfterMs: Long,
         val context: String,
     ) : BackendFrame
+    /**
+     * The allowlist, in answer to contacts_list / contact_remove / contact_update. [groupBound]: a family
+     * group chat is bound. [groupLink]: Telegram link that adds the bot to a group, null if not configured.
+     */
+    data class Contacts(val list: List<ContactInfo>, val groupBound: Boolean = false, val groupLink: String? = null) : BackendFrame
+    /** Share [link] with the contact; opening it in Telegram adds them. Single use, 15 min. */
+    data class ContactInvite(val name: String, val code: String, val link: String) : BackendFrame
+    /** Someone redeemed an invite and is now allowlisted. */
+    data class ContactJoined(val name: String, val role: String) : BackendFrame
     data class Unknown(val type: String?) : BackendFrame
 }
+
+/** One allowlisted contact. [handle] is what [PhoneFrame.ContactRemove] takes. */
+data class ContactInfo(val handle: String, val name: String, val role: String, val platform: String)
 
 fun encodeFrame(frame: PhoneFrame): String = FrameJson.encodeToString(PhoneFrame.serializer(), frame)
 
@@ -178,6 +209,17 @@ fun decodeBackendFrame(text: String): BackendFrame {
             actions = (obj["actions"] as? JsonArray)?.mapNotNull { it.jsonPrimitive.contentOrNull }.orEmpty(),
             calibrating = str("calibrating") == "true",
         )
+        "contacts" -> BackendFrame.Contacts(
+            (obj["list"] as? JsonArray)?.mapNotNull { el ->
+                val c = el as? JsonObject ?: return@mapNotNull null
+                fun f(k: String) = c[k]?.jsonPrimitive?.contentOrNull
+                ContactInfo(f("handle") ?: return@mapNotNull null, f("name") ?: "", f("role") ?: "friend", f("platform") ?: "imessage")
+            }.orEmpty(),
+            groupBound = str("groupBound") == "true",
+            groupLink = str("groupLink"),
+        )
+        "contact_invite" -> BackendFrame.ContactInvite(str("name") ?: "", str("code") ?: "", str("link") ?: "")
+        "contact_joined" -> BackendFrame.ContactJoined(str("name") ?: "", str("role") ?: "friend")
         "report" -> BackendFrame.Report(
             score = num("score") ?: 0.0,
             grade = str("grade") ?: "",

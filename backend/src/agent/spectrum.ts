@@ -2,11 +2,16 @@
 // The family group chat `space` is captured the first time an allowlisted
 // contact writes in a group (or anyone sends "/start" there) and reused for
 // proactive posts. If no group is known, posts fan out to known DM spaces.
+// The binding is saved to .group.json and restored at startup (GROUP_CHAT_ID overrides it).
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { Spectrum, attachment, type Message, type Space } from "spectrum-ts";
 import { imessage } from "@spectrum-ts/imessage";
 import { telegram } from "@spectrum-ts/telegram";
 import { config, required } from "../config.ts";
-import { allContacts, contactPlatform, lookupContact, type Contact, type Platform, type Role } from "./contacts.ts";
+import { addContact, allContacts, contactPlatform, lookupContact, type Contact, type Platform, type Role } from "./contacts.ts";
+import { redeemInvite } from "./invites.ts";
+import { trip } from "../trip/state.ts";
+import { sendToPhone } from "../ws/server.ts";
 
 export type Inbound = { contact: Contact; space: Space; message: Message; text: string; isGroup: boolean };
 
@@ -15,6 +20,43 @@ let groupSpace: Space | null = null;
 const dmSpaces = new Map<string, Space>(); // handle -> DM space
 
 const spaceType = (space: Space) => (space as { type?: string }).type;
+
+const GROUP_FILE = ".group.json";
+
+/** Remember the group binding so a restart doesn't need another /start. */
+function saveGroup(space: Space) {
+  try {
+    writeFileSync(GROUP_FILE, JSON.stringify({ platform: space.__platform, id: space.id }) + "\n");
+  } catch (err) {
+    console.error(`[spectrum] could not save ${GROUP_FILE}:`, err);
+  }
+}
+
+/** Rebind the group from GROUP_CHAT_ID (+ GROUP_CHAT_PLATFORM), else .group.json. Failure leaves auto-capture to do it. */
+async function restoreGroup() {
+  let saved: { platform: string; id: string } | null = null;
+  if (config.groupChat.id) saved = { platform: config.groupChat.platform, id: config.groupChat.id };
+  else if (existsSync(GROUP_FILE)) {
+    try {
+      saved = JSON.parse(readFileSync(GROUP_FILE, "utf8"));
+    } catch (err) {
+      console.error(`[spectrum] ignoring unreadable ${GROUP_FILE}:`, err);
+    }
+  }
+  if (!saved?.id) return;
+  if (!config.spectrum.providers.includes(saved.platform)) {
+    console.warn(`[spectrum] saved group is on ${saved.platform}, which is not in SPECTRUM_PROVIDERS; not restored`);
+    return;
+  }
+  try {
+    // `app` is built from a runtime provider list, so its type doesn't carry either provider.
+    const provider = (saved.platform === "telegram" ? telegram : imessage) as unknown as (a: unknown) => { space: { get(id: string): Promise<Space> } };
+    groupSpace = await provider(app).space.get(saved.id);
+    console.log(`[spectrum] group chat restored: ${saved.platform} ${saved.id}`);
+  } catch (err) {
+    console.error(`[spectrum] could not restore group ${saved.platform} ${saved.id}; send /start in the group again:`, err);
+  }
+}
 
 /** Text for anything the agent might relay; non-text content becomes a short description. */
 export function describeContent(message: Message, senderName: string): string | null {
@@ -44,8 +86,9 @@ export async function startSpectrum(onMessage: (m: Inbound) => Promise<void>) {
     projectSecret: config.spectrum.projectSecret(),
     providers,
   });
+  await restoreGroup();
   const perPlatform = allContacts().reduce<Record<string, number>>((n, c) => ({ ...n, [contactPlatform(c)]: (n[contactPlatform(c)] ?? 0) + 1 }), {});
-  console.log(`[spectrum] connected: ${enabled.join(", ")}; contacts: ${JSON.stringify(perPlatform)}. Send /start in the family group to bind it.`);
+  console.log(`[spectrum] connected: ${enabled.join(", ")}; contacts: ${JSON.stringify(perPlatform)}.${groupSpace ? "" : " Send /start in the family group to bind it."}`);
 
   void (async () => {
     for await (const [space, message] of app!.messages) {
@@ -69,8 +112,25 @@ async function route(space: Space, message: Message, onMessage: (m: Inbound) => 
   // Telegram sends "/start@BotName" when the command is picked from the menu in a group.
   if (/^\/start(@\w+)?$/i.test(text) && isGroup) {
     groupSpace = space;
+    saveGroup(space);
     console.log(`[spectrum] group chat bound via /start: ${platform} ${space.id}`);
-    await space.send(`Hi! I'm ${config.driverName}'s driving buddy. Ask me where ${config.driverName} is, or send a message for me to read to them.`);
+    await space.send(
+      "Hi everyone! I'm Driver Guardian, this group's driving buddy. While someone's on the road, ask me where they are or how they're doing, or send them a message and I'll read it out loud.",
+    );
+    return;
+  }
+  // Invite link from the phone app (t.me/<bot>?start=<code>) opened in a private chat.
+  const invite = !isGroup && message.sender?.id ? /^\/start\s+(\w+)$/i.exec(text) : null;
+  if (invite) {
+    const inv = redeemInvite(invite[1]!);
+    if (!inv) {
+      await space.send("That invite code is invalid or has expired. Ask the driver for a new link.");
+      return;
+    }
+    const added = addContact({ handle: message.sender!.id, name: inv.name, role: inv.role, platform });
+    dmSpaces.set(added.handle, space);
+    await space.send(`You're on ${trip.driverName}'s road crew 🚗`);
+    sendToPhone({ type: "contact_joined", name: added.name, role: added.role });
     return;
   }
   if (!contact) {
@@ -84,6 +144,7 @@ async function route(space: Space, message: Message, onMessage: (m: Inbound) => 
 
   if (isGroup && !groupSpace) {
     groupSpace = space;
+    saveGroup(space);
     console.log(`[spectrum] group chat captured: ${space.id}`);
   }
   if (!isGroup) dmSpaces.set(contact.handle, space);

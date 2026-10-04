@@ -14,6 +14,7 @@ import dev.driverguardian.sensing.MotionSource
 import dev.driverguardian.sensing.SmartSpectraPresageSource
 import dev.driverguardian.voice.VoicePlayer
 import dg.core.BackendFrame
+import dg.core.ContactInfo
 import dg.core.DemoClock
 import dg.core.DemoScript
 import dg.core.Dominant
@@ -66,6 +67,18 @@ data class UiState(
     val lastYawnAtMs: Long = 0,
 )
 
+/** Contacts tab: the backend's allowlist and the invite being shared. */
+data class ContactsState(
+    val loaded: Boolean = false,
+    val list: List<ContactInfo> = emptyList(),
+    val groupBound: Boolean = false,
+    val groupLink: String? = null,
+    val inviting: Boolean = false, // contact_add sent, waiting for contact_invite or error
+    val invite: BackendFrame.ContactInvite? = null,
+    val error: String? = null,
+    val joined: String? = null, // "Sam joined" banner
+)
+
 /**
  * Owns the trip lifecycle and the 10 s window loop. The phone senses and displays: every window of
  * raw signals goes to the backend, whose risk engine scores it and decides every alert (voice,
@@ -94,6 +107,8 @@ class TripController(app: Application) : AndroidViewModel(app) {
     )
     val connection: StateFlow<Conn> = client.state
     val voiceState: StateFlow<VoicePlayer.State> = voice.state
+    /** Trip history from the backend risk engine (Tiger Data), on the current host. */
+    val history = dev.driverguardian.net.HistoryApi { settings.host }
 
     // This trip's windows (events by ts) and the engine's verdicts; the report card is built from these.
     private val sentEvents = mutableMapOf<Long, List<String>>()
@@ -108,7 +123,7 @@ class TripController(app: Application) : AndroidViewModel(app) {
     // Finished trips, newest first, kept on the phone for the Stats tab.
     private val historyStore = TripHistoryStore(app)
     private val _history = MutableStateFlow<List<TripSummary>>(emptyList())
-    val history: StateFlow<List<TripSummary>> = _history
+    val localHistory: StateFlow<List<TripSummary>> = _history
     private var tripDemo = false
 
     // End-of-trip popup: speeds seen during the trip plus the engine's alertness, until dismissed.
@@ -265,9 +280,46 @@ class TripController(app: Application) : AndroidViewModel(app) {
                 is BackendFrame.Speak -> voice.play(f)
                 is BackendFrame.Report -> _sharedReport.value = f
                 is BackendFrame.Navigate -> onNavigate(f.query)
-                is BackendFrame.Error -> android.util.Log.w("Backend", f.message)
+                is BackendFrame.Error -> { android.util.Log.w("Backend", f.message); onContactsFrame(f) }
+                is BackendFrame.Contacts, is BackendFrame.ContactInvite, is BackendFrame.ContactJoined -> onContactsFrame(f)
                 else -> {}
             }
+        }
+    }
+
+    private val _contacts = MutableStateFlow(ContactsState())
+    val contacts: StateFlow<ContactsState> = _contacts
+
+    fun refreshContacts() = client.send(PhoneFrame.ContactsList)
+
+    /** Telegram invite: the backend answers with contact_invite (or an error). */
+    fun addContact(name: String, guardian: Boolean) {
+        _contacts.value = _contacts.value.copy(inviting = true, invite = null, error = null)
+        client.send(PhoneFrame.ContactAdd(name.trim(), if (guardian) "guardian" else "friend", "telegram"))
+    }
+
+    fun removeContact(handle: String) {
+        _contacts.value = _contacts.value.copy(list = _contacts.value.list.filterNot { it.handle == handle })
+        client.send(PhoneFrame.ContactRemove(handle))
+    }
+
+    fun setGuardian(handle: String, on: Boolean) {
+        val role = if (on) "guardian" else "friend"
+        _contacts.value = _contacts.value.copy(list = _contacts.value.list.map { if (it.handle == handle) it.copy(role = role) else it })
+        client.send(PhoneFrame.ContactUpdate(handle, role))
+    }
+
+    fun clearInvite() { _contacts.value = _contacts.value.copy(inviting = false, invite = null, error = null) }
+    fun clearJoined() { _contacts.value = _contacts.value.copy(joined = null) }
+
+    private fun onContactsFrame(f: BackendFrame) {
+        val c = _contacts.value
+        _contacts.value = when (f) {
+            is BackendFrame.Contacts -> c.copy(loaded = true, list = f.list, groupBound = f.groupBound, groupLink = f.groupLink)
+            is BackendFrame.ContactInvite -> c.copy(inviting = false, invite = f)
+            is BackendFrame.ContactJoined -> c.copy(joined = "${f.name} joined as ${if (f.role == "guardian") "a guardian" else "a friend"}").also { refreshContacts() }
+            is BackendFrame.Error -> if (c.inviting) c.copy(inviting = false, error = f.message) else c
+            else -> c
         }
     }
 

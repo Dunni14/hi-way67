@@ -72,14 +72,16 @@ The tree is split between phone and backend. See [architecture.md](architecture.
 | Listen 5 s after a message, relay reply | Built | Frontend runs `SpeechRecognizer` for `listenAfterMs` and sends `utterance` with the same `context`. Needs the mic permission. |
 | Roasts go through immediately at high drowsiness | Done | Roasts are enqueued as priority. |
 | Family messages go through immediately at high drowsiness | Not started | Normal family messages are always queued in order, regardless of risk. |
-| Full-screen hands-free dashcam UI | Built | Portrait, styled after the Figma "UI" design (light theme, icon tab bar): status pill (speaking / listening / yawn / can't see driver), speed vs limit, camera card (a map in the design), attention · drowsiness · eye tracking · speech tiles, drive/stats/contacts/settings tabs; only Drive while moving. Not yet checked on a device. |
+| Full-screen hands-free dashcam UI | Built | Portrait, styled after the Figma "UI" design (light theme, icon tab bar): status pill (speaking / listening / yawn / can't see driver), speed vs limit, a 3D Mapbox map card (ported from CoolVitals, `DriveMap.kt`) with the driver camera as a small picture-in-picture, attention · drowsiness · eye tracking · speech tiles, drive/stats/contacts/settings tabs; only Drive while moving. Needs a Mapbox public token in `frontend/app/src/main/res/values/mapbox_access_token.xml` (gitignored, see `mapbox_access_token.xml.example`), otherwise the card shows a note. Not yet checked on a device. |
 
 ## 6. Photon iMessage agent
 
 | Feature | Status | Notes |
 |---|---|---|
 | Connected through Photon Spectrum | Done | `agent/spectrum.ts`. iMessage, with Telegram as an optional extra provider (setup: [imessage-agent.md](imessage-agent.md#telegram-setup)). |
-| Allowlist with guardian / friend roles | Done | `contacts.json`, with an optional `platform` per contact. Without the file, dev mode treats every sender as a guardian. |
+| Allowlist with guardian / friend roles | Done (backend) | `contacts.json`, with an optional `platform` per contact; live, and every change is written back. Without the file, dev mode treats every sender as a guardian until the first contact is added. The phone can list, remove and add contacts (`contacts_list`, `contact_remove`, `contact_add`): Telegram contacts join through a single-use 15 min invite link (`/start <code>` in a DM to the bot, needs `TELEGRAM_BOT_USERNAME`); adding iMessage contacts from the app is not available yet. `contact_update` flips guardian / friend. Tested with `fake-phone -- --contacts` and unit tests. Invite redemption not yet tried against a real bot. See [imessage-agent.md](imessage-agent.md#adding-contacts-from-the-phone-app). |
+| Contacts tab | Built | `ContactsScreen.kt`, after the Figma "Android Compact - 4" frame: search (text or voice), + opens a Telegram invite dialog with a share button, rows with initials avatars and a guardian switch, tap a row to remove, "Create group" opens Telegram's add-bot-to-group picker (`groupLink`) and shows "Family group connected" once bound. Checked on a Galaxy S24 against the live backend (list and group status); add, toggle and remove not yet tapped through on the device. |
+| Family group chat binding survives restarts | Done (backend), untested live | Saved to `.group.json` on `/start` or auto-capture, restored at startup with `space.get(id)`; `GROUP_CHAT_ID` overrides it. Not yet tried against a real Telegram group. |
 | Flow 1: contacts ask, agent answers | Done | LLM answer over pre-filtered facts; location only for guardians. |
 | Flow 2: contacts → driver | Done | Queued and spoken. Replies "isn't driving right now" when no trip. |
 | Flow 3: driver → contacts | Done | "Tell her I'm stopping in ten" → `🗣️ Alex says: "…"`. |
@@ -133,7 +135,7 @@ The tree is split between phone and backend. See [architecture.md](architecture.
 - **Telegram** provider, so you can test without iMessage access.
 - **`fake-phone`** dev client that plays the Android app (scripted or interactive).
 - **Demo mode** in the frontend: scripted driver signals at a fake 65 mph.
-- **`/start`** command in a group chat binds the agent to that group.
+- **`/start`** command in a group chat binds the agent to that group, and the binding is saved across restarts. **`/start <code>`** in a DM redeems a contact invite from the app.
 - **`GET /health`** status endpoint.
 
 ## Known issues and gaps
@@ -141,13 +143,13 @@ The tree is split between phone and backend. See [architecture.md](architecture.
 These come from reading the code. None of them break the type check (`npm run typecheck` passes).
 
 1. **Driver name drift.** The phone's `hello.driverName` updates trip state, but the classifier prompt, the answer prompt and the `/start` greeting use `DRIVER_NAME` from `.env`. If the two differ, the agent uses both names.
-2. **Telegram DMs need the contact to write first.** Telegram bots can't open a DM, so `dm()` only reaches a Telegram contact who has messaged the bot privately since the last restart; otherwise it logs a warning and skips them. Group posts work once the group is bound.
+2. **Telegram DMs need the contact to write first.** Telegram bots can't open a DM, so `dm()` only reaches a Telegram contact who has messaged the bot privately since the last restart (redeeming an invite counts); otherwise it logs a warning and skips them. Group posts work once the group is bound.
 3. **Arrival pings ignore sharing mode.** With sharing set to `never`, the trip summary is suppressed, but contacts who asked to be told on arrival still get a DM.
 4. **Settings are fixed per engine trip.** Kids in car and sharing mode are read when the engine trip starts; toggling them mid-trip only affects the chat side until the next trip.
 5. **Permission prompt never expires.** If the driver never answers "Do you want me to let your family know?", the next yes/no utterance, even minutes later, is treated as the answer.
-6. **Everything is in memory.** A restart loses trip history, contact preferences, the captured group chat and the DM space cache. Someone must post in the group (or send `/start`) again after a restart.
+6. **Mostly in memory.** A restart loses trip history, contact preferences, pending contact invites and the DM space cache. The group chat binding (`.group.json`) and contacts added from the app (`contacts.json`) survive.
 7. **`/start` is not allowlisted.** Any member of any group can bind the agent's group chat with `/start`.
-8. **No auth on the WebSocket.** Anyone who can reach the port can connect as the phone, and a new connection replaces the current one.
+8. **No auth on the WebSocket.** Anyone who can reach the port can connect as the phone, and a new connection replaces the current one. Since the contact frames, that also lets them list (Telegram ids and phone numbers), remove and invite contacts.
 9. **Unused state.** `driverQueue.lastContext` is written but never read.
 10. **Odd example filename.** The example allowlist is named `contacts.example copy.json` instead of `contacts.example.json`.
 11. **Face ratios assume MediaPipe indices.** If Presage's 478 landmarks are ordered differently, eye closure and yawns will be noise; blinks still work.

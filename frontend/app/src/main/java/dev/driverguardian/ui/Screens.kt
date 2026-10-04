@@ -10,6 +10,7 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -19,15 +20,20 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
@@ -58,22 +64,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-// Palette and shapes from the Figma file (MHacks | AutoAI, "UI" section).
-private val Main = Color(0xFF366DE1) // Menu main
-private val Good = Color(0xFF30A54D)
-private val Bad = Color(0xFFF35C5C)
-private val Warn = Color(0xFFFFB74D)
-private val SystemText = Color(0xFF495675) // System color
-private val OnSurface = Color(0xFF1D1B20)
-private val Surface = Color(0xFFF9FCFE) // Background color
-private val TabBg = Color(0xFFFDFDFD) // Tab background
-private val Pressed = Color(0xFFECF4FD) // Button pressed
-private val ScreenBg = Brush.verticalGradient(listOf(Color(0xFFF3F8FE), Color(0xFFECF4FE)))
-private val CardShape = RoundedCornerShape(20.dp)
-private val Label = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, lineHeight = 15.sp, letterSpacing = 0.5.sp)
-
-val DriverGuardianColors = lightColorScheme(primary = Main, surface = Surface, onSurface = OnSurface)
-
 /** Why the risk engine raised the tier, in plain words. */
 private fun overrideText(o: String?) = when (o) {
     "microsleep" -> "eyes closed too long"
@@ -89,12 +79,13 @@ fun DashcamScreen(
     ui: UiState, conn: Conn, voice: VoicePlayer.State,
     onStart: () -> Unit, onEnd: () -> Unit,
     liveSensing: Boolean = false,
+    driverName: String = "",
 ) {
     Column(Modifier.fillMaxSize().background(ScreenBg).statusBarsPadding().padding(start = 15.dp, end = 15.dp, top = 8.dp, bottom = 14.dp)) {
-        StatusPill(ui, conn, voice, Modifier.align(Alignment.CenterHorizontally))
+        StatusPill(ui, conn, voice, driverName, Modifier.align(Alignment.CenterHorizontally))
 
         Row(
-            Modifier.fillMaxWidth().padding(start = 24.dp, end = 15.dp, top = 4.dp, bottom = 10.dp),
+            Modifier.fillMaxWidth().padding(start = 24.dp, end = 4.dp, top = 4.dp, bottom = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top,
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -102,7 +93,7 @@ fun DashcamScreen(
                 Text("current\nspeed", color = SystemText, style = Label, textAlign = TextAlign.Center)
             }
             Column(
-                Modifier.size(85.dp, 86.dp).clip(CardShape).background(Surface),
+                Modifier.size(85.dp, 86.dp).card(color = Surface, elevation = 3.dp),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
             ) {
                 Text("%.0f".format(SPEED_LIMIT_MPH), color = SystemText, fontSize = 32.sp, fontWeight = FontWeight.Medium, lineHeight = 34.sp)
@@ -110,15 +101,22 @@ fun DashcamScreen(
             }
         }
 
-        // The design shows a map in this card. The app has no map, so the card holds the driver camera.
-        Box(Modifier.fillMaxWidth().weight(1f).clip(CardShape).background(Color.Black)) {
-            // Recreate the preview when ownership flips, so the app never holds the camera Presage needs.
-            key(liveSensing) { CameraPreview(Modifier.fillMaxSize(), sdkOwnsCamera = liveSensing) }
+        // The card shows the 3D map; the driver camera is a small picture-in-picture in the corner.
+        Box(Modifier.fillMaxWidth().weight(1f).card(color = Pressed)) {
+            DriveMapView(Modifier.fillMaxSize())
+            Box(Modifier.align(Alignment.TopEnd).padding(10.dp).size(72.dp, 96.dp).card(RoundedCornerShape(14.dp), Color.Black, 4.dp)) {
+                // Recreate the preview when ownership flips, so the app never holds the camera Presage needs.
+                key(liveSensing) { CameraPreview(Modifier.fillMaxSize(), sdkOwnsCamera = liveSensing) }
+            }
             val button = Modifier.align(Alignment.BottomCenter).padding(12.dp).fillMaxWidth()
             if (ui.running) {
                 HoldButton("Hold to end trip", button, onHeld = onEnd)
             } else {
-                Button(onClick = onStart, modifier = button, shape = CardShape) { Text("Start trip") }
+                Button(
+                    onClick = onStart, modifier = button.height(52.dp), shape = CardShape,
+                    colors = ButtonDefaults.buttonColors(containerColor = Main),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp),
+                ) { Text("Start trip", fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
             }
         }
 
@@ -137,7 +135,7 @@ private fun HoldButton(text: String, modifier: Modifier, holdMs: Int = 1500, onH
     val scope = rememberCoroutineScope()
     val held by rememberUpdatedState(onHeld)
     Box(
-        modifier.height(48.dp).clip(CardShape).background(Main)
+        modifier.height(52.dp).card(color = Main, elevation = 4.dp)
             .drawBehind { drawRect(Bad, size = Size(size.width * progress.value, size.height)) }
             .pointerInput(Unit) {
                 detectTapGestures(onPress = {
@@ -151,7 +149,7 @@ private fun HoldButton(text: String, modifier: Modifier, holdMs: Int = 1500, onH
                 })
             },
         contentAlignment = Alignment.Center,
-    ) { Text(text, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium) }
+    ) { Text(text, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
 }
 
 /** The design's three tile states: green value, blue value, red tile. NONE is "no reading yet". */
@@ -210,18 +208,19 @@ private fun StatusTile(t: Tile, modifier: Modifier) {
     val bad = t.level == Level.BAD
     val valueColor = when (t.level) { Level.GREAT -> Good; Level.GOOD -> Main; Level.BAD -> Surface; Level.NONE -> SystemText }
     Row(
-        modifier.height(90.dp).clip(CardShape).background(if (bad) Bad else Color.White).padding(start = 16.dp, end = 6.dp),
+        modifier.height(86.dp).card(color = if (bad) Bad else Color.White, elevation = if (bad) 8.dp else 5.dp).padding(start = 18.dp, end = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+        val tint = if (bad) Color.White else Main
+        Box(Modifier.size(46.dp), contentAlignment = Alignment.Center) {
             if (t.icon != null) {
-                Icon(painterResource(t.icon), contentDescription = null, tint = if (bad) Surface else Main, modifier = Modifier.fillMaxSize())
+                Icon(painterResource(t.icon), contentDescription = null, tint = tint, modifier = Modifier.fillMaxSize())
             } else {
-                // The design has no icon for this tile yet.
-                Text("zZ", color = if (bad) Surface else Main, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                // The design has no drowsiness icon; a moon in the same weight as the others.
+                Icon(Icons.Rounded.Bedtime, contentDescription = null, tint = tint, modifier = Modifier.fillMaxSize())
             }
         }
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(12.dp))
         Column {
             Text(t.label, color = if (bad) Pressed else SystemText, style = Label, maxLines = 1)
             // 24 sp is the design size; longer words than the design's shrink to stay on one line.
@@ -232,9 +231,12 @@ private fun StatusTile(t: Tile, modifier: Modifier) {
     }
 }
 
-/** Top pill: what the app is doing right now, most urgent first, with the backend connection dot. */
+/**
+ * Top pill (Figma): the driver's avatar overlapping a white pill that says what the app is doing, most
+ * urgent first. The avatar ring is the backend connection: green connected, yellow connecting, red down.
+ */
 @Composable
-private fun StatusPill(ui: UiState, conn: Conn, voice: VoicePlayer.State, modifier: Modifier) {
+private fun StatusPill(ui: UiState, conn: Conn, voice: VoicePlayer.State, driverName: String, modifier: Modifier) {
     val yawnFlash = System.currentTimeMillis() - ui.lastYawnAtMs < 4_000
     val (text, bg) = when {
         !ui.running -> "Ready • Tap Start trip" to TabBg
@@ -246,14 +248,20 @@ private fun StatusPill(ui: UiState, conn: Conn, voice: VoicePlayer.State, modifi
         yawnFlash -> "Yawn detected" to Color(0xFFFDD835)
         else -> "Driving • Monitoring" to TabBg
     }
-    Row(
-        modifier.height(36.dp).widthIn(min = 208.dp).clip(CardShape).background(bg).padding(horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
-    ) {
-        val dot = when (conn) { Conn.CONNECTED -> Good; Conn.CONNECTING -> Color(0xFFFDD835); else -> Bad }
-        Box(Modifier.size(8.dp).clip(CircleShape).background(if (bg == Bad) Surface else dot))
-        Spacer(Modifier.width(8.dp))
-        Text(text, color = if (bg == Bad) Surface else SystemText, style = Label)
+    val ring = when (conn) { Conn.CONNECTED -> Good; Conn.CONNECTING -> Color(0xFFFDD835); else -> Bad }
+    Box(modifier.height(44.dp), contentAlignment = Alignment.CenterStart) {
+        Box(
+            Modifier.padding(start = 22.dp).height(34.dp).widthIn(min = 210.dp).card(RoundedCornerShape(50), bg, 4.dp)
+                .padding(start = 32.dp, end = 18.dp),
+            contentAlignment = Alignment.Center,
+        ) { Text(text, color = if (bg == Bad) Surface else SystemText, style = Label) }
+        Box(
+            Modifier.size(44.dp).shadow(6.dp, CircleShape).clip(CircleShape).background(ring).padding(3.dp)
+                .clip(CircleShape).background(Main),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(driverName.trim().take(1).uppercase().ifEmpty { "•" }, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        }
     }
 }
 
@@ -266,7 +274,8 @@ private val Tabs = listOf(
 @Composable
 fun TabBar(selected: String, parked: Boolean, onSelect: (String) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().background(TabBg).navigationBarsPadding().padding(start = 15.dp, end = 15.dp, top = 6.dp, bottom = 10.dp),
+        Modifier.fillMaxWidth().shadow(12.dp, RectangleShape, ambientColor = Main.copy(alpha = 0.1f), spotColor = Main.copy(alpha = 0.1f))
+            .background(TabBg).navigationBarsPadding().padding(start = 15.dp, end = 15.dp, top = 8.dp, bottom = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         for ((tab, icon) in Tabs) {
@@ -280,18 +289,18 @@ fun TabBar(selected: String, parked: Boolean, onSelect: (String) -> Unit) {
             ) {
                 Icon(painterResource(icon), contentDescription = null, tint = color, modifier = Modifier.size(28.dp))
                 Spacer(Modifier.height(4.dp))
-                Text(tab.replaceFirstChar { it.uppercase() }, color = color, style = Label)
+                Text(tab.replaceFirstChar { it.uppercase() }, color = color, style = Label, fontWeight = FontWeight.SemiBold)
             }
         }
     }
 }
 
-/** Simple message screen for tabs that have nothing to show yet. */
+/** Simple message screen for tabs that have nothing to show yet, titled like the Contacts wireframe. */
 @Composable
 fun PlaceholderScreen(title: String, body: String) {
-    Column(Modifier.fillMaxSize().background(ScreenBg).statusBarsPadding().padding(horizontal = 24.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(title, color = OnSurface, fontSize = 22.sp)
-        Text(body, color = SystemText, fontSize = 15.sp)
+    Column(Modifier.fillMaxSize().background(ScreenBg).statusBarsPadding().padding(horizontal = 18.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Text(title, style = ScreenTitle, modifier = Modifier.padding(start = 4.dp, top = 12.dp))
+        Text(body, color = SystemText, fontSize = 15.sp, lineHeight = 21.sp, modifier = Modifier.fillMaxWidth().card().padding(18.dp))
     }
 }
 
@@ -359,26 +368,77 @@ private fun Mono(s: String) = Text(s, color = Color.White, fontFamily = FontFami
 fun SettingsScreen(s: AppSettings, onSave: (AppSettings) -> Unit, onDebug: () -> Unit) {
     var host by remember(s.host) { mutableStateOf(s.host) }
     var name by remember(s.driverName) { mutableStateOf(s.driverName) }
-    Column(Modifier.fillMaxSize().background(ScreenBg).statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Settings", color = OnSurface, fontSize = 22.sp)
-        OutlinedTextField(host, { host = it }, label = { Text("Backend host:port") }, singleLine = true)
-        OutlinedTextField(name, { name = it }, label = { Text("Driver name") }, singleLine = true)
-        Button(onClick = { onSave(s.copy(host = host, driverName = name)) }) { Text("Save host and name") }
-        Text("Share state with guardian", color = OnSurface)
-        Column {
-            listOf(SharingMode.ALWAYS to "Always", SharingMode.HIGH_ONLY to "High risk only", SharingMode.NEVER to "Never").forEach { (m, label) ->
-                FilterChip(selected = s.sharingMode == m, onClick = { onSave(s.copy(sharingMode = m)) }, label = { Text(label) })
+    val field = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = Main, unfocusedBorderColor = Hairline, focusedLabelColor = Main,
+        unfocusedContainerColor = Surface, focusedContainerColor = Color.White,
+    )
+    Column(
+        Modifier.fillMaxSize().background(ScreenBg).statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Text("Settings", style = ScreenTitle, modifier = Modifier.padding(start = 4.dp, top = 12.dp))
+
+        SettingsGroup("Driver") {
+            OutlinedTextField(name, { name = it }, label = { Text("Driver name") }, singleLine = true, shape = RoundedCornerShape(14.dp), colors = field, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(host, { host = it }, label = { Text("Backend host:port") }, singleLine = true, shape = RoundedCornerShape(14.dp), colors = field, modifier = Modifier.fillMaxWidth())
+            Button(
+                onClick = { onSave(s.copy(host = host, driverName = name)) }, modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = Main),
+            ) { Text("Save host and name", fontWeight = FontWeight.SemiBold) }
+        }
+
+        SettingsGroup("Share state with guardian") {
+            // Segmented control: the selected option sits on the same pale-blue pill as the selected tab.
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Surface).border(1.dp, Hairline, RoundedCornerShape(14.dp)).padding(4.dp)) {
+                listOf(SharingMode.ALWAYS to "Always", SharingMode.HIGH_ONLY to "High risk", SharingMode.NEVER to "Never").forEach { (m, label) ->
+                    val on = s.sharingMode == m
+                    Box(
+                        Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(11.dp)).background(if (on) Pressed else Color.Transparent)
+                            .clickable { onSave(s.copy(sharingMode = m)) },
+                        contentAlignment = Alignment.Center,
+                    ) { Text(label, color = if (on) Main else SystemText, fontSize = 14.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium) }
+                }
             }
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Switch(checked = s.kidsInCar, onCheckedChange = { onSave(s.copy(kidsInCar = it)) })
-            Spacer(Modifier.width(8.dp)); Text("Kids in car", color = OnSurface)
+
+        SettingsGroup("Trip") {
+            ToggleRow("Kids in car", "Alerts start one level higher", s.kidsInCar) { onSave(s.copy(kidsInCar = it)) }
+            HorizontalDivider(color = Hairline)
+            ToggleRow("Demo mode", "Scripted driver signals, fake 65 mph", s.demoMode) { onSave(s.copy(demoMode = it)) }
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Switch(checked = s.demoMode, onCheckedChange = { onSave(s.copy(demoMode = it)) })
-            Spacer(Modifier.width(8.dp)); Text("Demo mode (scripted driver signals, fake 65 mph)", color = OnSurface)
+
+        Row(
+            Modifier.fillMaxWidth().card().clickable(onClick = onDebug).padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Debug", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                Text("Features, weights, face values", color = Muted, fontSize = 13.sp)
+            }
+            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = Muted)
         }
-        OutlinedButton(onClick = onDebug) { Text("Debug: features, weights, face values") }
+    }
+}
+
+@Composable
+private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(Modifier.fillMaxWidth().card().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(title, style = SectionTitleStyle, fontSize = 17.sp)
+        content()
+    }
+}
+
+@Composable
+private fun ToggleRow(title: String, detail: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            Text(detail, color = Muted, fontSize = 13.sp)
+        }
+        Switch(
+            checked = checked, onCheckedChange = onChange,
+            colors = SwitchDefaults.colors(checkedTrackColor = Main, uncheckedTrackColor = Pressed, uncheckedBorderColor = Hairline, uncheckedThumbColor = SystemText),
+        )
     }
 }
 
@@ -413,9 +473,9 @@ private fun RecapRow(label: String, value: String, valueColor: Color) {
     }
 }
 
-/** Stats tab: finished trips, newest first. The latest one reopens its full report card. */
+/** Stats tab while the backend is unreachable: trips kept on the phone, newest first. The latest one reopens its report card. */
 @Composable
-fun TripHistoryScreen(history: List<TripSummary>, onOpenLatest: (() -> Unit)?) {
+fun LocalTripHistoryScreen(history: List<TripSummary>, onOpenLatest: (() -> Unit)?) {
     Column(Modifier.fillMaxSize().background(ScreenBg).statusBarsPadding().padding(horizontal = 15.dp).padding(top = 20.dp)) {
         Text("Stats", color = OnSurface, fontSize = 22.sp, modifier = Modifier.padding(horizontal = 9.dp))
         Text("Trip history", color = SystemText, style = Label, modifier = Modifier.padding(start = 9.dp, top = 12.dp, bottom = 8.dp))
@@ -456,10 +516,10 @@ private fun TripRow(t: TripSummary, onOpen: (() -> Unit)?) {
 }
 
 private fun gradeColor(g: String) = when (g) {
-    "A", "B" -> Color(0xFF43A047)
-    "C" -> Color(0xFFFDD835)
+    "A", "B" -> Good
+    "C" -> Warn
     "D" -> Color(0xFFFB8C00)
-    else -> Color(0xFFE53935)
+    else -> Bad
 }
 
 /**
@@ -468,51 +528,78 @@ private fun gradeColor(g: String) = when (g) {
  */
 @Composable
 fun ReportCardScreen(card: dg.core.ReportCard?, shared: dg.core.BackendFrame.Report?, onDone: () -> Unit) {
-    Column(Modifier.fillMaxSize().background(Color(0xFF101010)).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        if (shared != null) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text(shared.grade, color = gradeColor(shared.grade), fontSize = 96.sp, fontWeight = FontWeight.Bold)
-                Column {
-                    Text("Shared with friends and family", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    Text("Safety score ${shared.score.toInt()}/100", color = Color.White)
+    Column(
+        Modifier.fillMaxSize().background(ScreenBg).statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        val grade = shared?.grade ?: card?.grade
+        Row(Modifier.fillMaxWidth().card().padding(18.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            if (grade != null) {
+                val tint = gradeColor(grade)
+                Box(Modifier.size(96.dp).clip(CircleShape).background(tint.copy(alpha = 0.12f)).border(6.dp, tint, CircleShape), contentAlignment = Alignment.Center) {
+                    Text(grade, color = tint, fontSize = 48.sp, fontWeight = FontWeight.Bold)
                 }
             }
-            if (shared.summary.isNotBlank()) Text(shared.summary, color = Color.White, fontSize = 16.sp)
-            Mono("avg speed %.0f mph   top speed %.0f mph   attention %.0f/100".format(shared.avgSpeedMph, shared.topSpeedMph, shared.attentionScore))
-            val bitmap = remember(shared.image) {
-                if (shared.image.isEmpty()) null
-                else runCatching {
-                    val bytes = android.util.Base64.decode(shared.image, android.util.Base64.DEFAULT)
-                    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-                }.getOrNull()
+            Column {
+                Text("Trip report", style = SectionTitleStyle, fontSize = 22.sp)
+                Text(
+                    if (shared != null) "Safety score ${shared.score.toInt()}/100 · shared with friends and family" else "Making the shared report…",
+                    color = Muted, fontSize = 14.sp,
+                )
+                card?.let { Text("${it.durationMin} min", color = Muted, fontSize = 14.sp) }
             }
-            if (bitmap != null) {
-                Image(bitmap, contentDescription = "Trip report card, as shared", modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.FillWidth)
+        }
+        if (shared != null) {
+            Column(Modifier.fillMaxWidth().card().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (shared.summary.isNotBlank()) Text(shared.summary, color = Ink, fontSize = 16.sp, lineHeight = 22.sp)
+                ReportFact("Average speed", "%.0f mph".format(shared.avgSpeedMph))
+                ReportFact("Top speed", "%.0f mph".format(shared.topSpeedMph))
+                ReportFact("Attention", "%.0f/100".format(shared.attentionScore))
+                val bitmap = remember(shared.image) {
+                    if (shared.image.isEmpty()) null
+                    else runCatching {
+                        val bytes = android.util.Base64.decode(shared.image, android.util.Base64.DEFAULT)
+                        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                    }.getOrNull()
+                }
+                if (bitmap != null) {
+                    Image(bitmap, contentDescription = "Trip report card, as shared", modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.FillWidth)
+                }
             }
-        } else {
-            Mono("Making the shared report…")
         }
         if (card != null) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("Risk over the trip", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Text("${card.durationMin} min", color = Color.White)
+            if (shared == null) Text(card.advice, color = Ink, fontSize = 16.sp, lineHeight = 22.sp, modifier = Modifier.fillMaxWidth().card().padding(18.dp))
+            Column(Modifier.fillMaxWidth().card().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Risk over time", style = SectionTitleStyle, fontSize = 17.sp)
+                RiskChart(card.series, Modifier.fillMaxWidth().height(170.dp))
+                ReportFact("Average risk", "%.0f".format(card.avgRisk))
+                ReportFact("Peak risk", "%.0f".format(card.peakRisk))
+                ReportFact("Time at warning or worse", "%.0f%%".format(card.pctHighRisk))
+                ReportFact("Alerts", if (card.alertsByTier.isEmpty()) "none" else card.alertsByTier.entries.joinToString("  ") { "T${it.key}×${it.value}" })
+                if (card.eventCounts.isNotEmpty()) ReportFact("Events", card.eventCounts.entries.joinToString("  ") { "${it.key}×${it.value}" })
             }
-            if (shared == null) Text(card.advice, color = Color.White, fontSize = 16.sp)
-            RiskChart(card.series, Modifier.fillMaxWidth().height(180.dp))
-            Mono("avg risk %.0f   peak %.0f   time at warning or worse: %.0f%%".format(card.avgRisk, card.peakRisk, card.pctHighRisk))
-            Mono("alerts: " + if (card.alertsByTier.isEmpty()) "none" else card.alertsByTier.entries.joinToString("  ") { "T${it.key}×${it.value}" })
-            if (card.eventCounts.isNotEmpty()) Mono("events: " + card.eventCounts.entries.joinToString("  ") { "${it.key}×${it.value}" })
         }
-        Button(onClick = onDone) { Text("Done") }
+        Button(
+            onClick = onDone, modifier = Modifier.fillMaxWidth().height(52.dp), shape = CardShape,
+            colors = ButtonDefaults.buttonColors(containerColor = Main),
+        ) { Text("Done", fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
+    }
+}
+
+@Composable
+private fun ReportFact(label: String, value: String) {
+    Row(Modifier.fillMaxWidth()) {
+        Text(label, color = SystemText, fontSize = 14.sp, modifier = Modifier.weight(1f))
+        Text(value, color = Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
 @Composable
 private fun RiskChart(series: List<dg.core.ReportPoint>, modifier: Modifier) {
-    androidx.compose.foundation.Canvas(modifier.background(Color(0xFF1A1A1A))) {
+    androidx.compose.foundation.Canvas(modifier.clip(RoundedCornerShape(12.dp)).background(Surface)) {
         if (series.size < 2) return@Canvas
         fun y(r: Double) = size.height * (1f - (r / 100.0).toFloat().coerceIn(0f, 1f))
-        for ((level, c) in listOf(40.0 to Color(0xFFFDD835), 70.0 to Color(0xFFFB8C00), 85.0 to Color(0xFFE53935))) {
+        for ((level, c) in listOf(40.0 to Warn, 70.0 to Color(0xFFFB8C00), 85.0 to Bad)) {
             drawLine(c.copy(alpha = 0.35f), androidx.compose.ui.geometry.Offset(0f, y(level)), androidx.compose.ui.geometry.Offset(size.width, y(level)), strokeWidth = 2f)
         }
         val path = androidx.compose.ui.graphics.Path()
@@ -520,6 +607,6 @@ private fun RiskChart(series: List<dg.core.ReportPoint>, modifier: Modifier) {
             val x = size.width * i / (series.size - 1)
             if (i == 0) path.moveTo(x, y(p.risk)) else path.lineTo(x, y(p.risk))
         }
-        drawPath(path, Color.White, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 4f))
+        drawPath(path, Main, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 5f, cap = androidx.compose.ui.graphics.StrokeCap.Round))
     }
 }

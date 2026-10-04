@@ -4,7 +4,7 @@ Brief: [frontend.md](frontend.md). Wire format: [../backend/PROTOCOL.md](../back
 
 - `core/`: pure Kotlin/JVM, no Android. Frames (protocol mirror), `WindowAggregator` (raw signals per 10 s window), face geometry (eye closure, closure runs, yawns), scripted demo and `DemoClock`, report card, JVM tests. **No scoring**: the backend's risk engine scores every window and decides every alert.
 - `../android/`: standalone Presage SmartSpectra demo (face-metrics overlay). Reference for the SDK setup the app uses; not part of this Gradle build.
-- `app/`: Android shell, portrait. CameraX preview, OkHttp `BackendClient` (reconnect, buffered windows), GPS/IMU, alarm, `VoicePlayer` (plays the backend's ElevenLabs audio, listens for replies), Compose UI (dashcam, debug, settings, report card).
+- `app/`: Android shell, portrait. CameraX preview, OkHttp `BackendClient` (reconnect, buffered windows), GPS/IMU, alarm, `VoicePlayer` (plays the backend's ElevenLabs audio, listens for replies), Compose UI (dashcam with a 3D Mapbox map and a small camera preview, debug, settings, report card). The map (`ui/DriveMap.kt`) needs a Mapbox public token: copy `mapbox_access_token.xml.example` to `app/src/main/res/values/mapbox_access_token.xml` (gitignored).
 
 ## Build and test
 
@@ -32,8 +32,13 @@ vs the fixed demo limit, a rounded card with the driver camera (the design shows
 (Start trip is a tap; ending needs a 1.5 s hold on "Hold to end trip" and works at any speed), and four tiles: attention (risk tier), drowsiness (sub-score + yawn count), eye tracking (live eye closure),
 speech (Presage talking / mic listening). Tiles use the design's three states: green value, blue value, red tile.
 The design's second tile is "Distraction"; the app shows drowsiness there because gaze is not measured, and that
-tile has no icon in the design yet. Icons in `app/src/main/res/drawable/` are exported from the Figma file. Ending a trip shows a summary popup (average speed, top speed, alertness). Stats lists past trips (kept on the phone) and opens the latest trip's report card, which shows the report the backend generated and shared with friends and family (image and summary, from the `report` frame) above the phone's own risk chart; Contacts is a placeholder (contacts live in the
-backend's `contacts.json`); Settings links to the Debug screen.
+tile has no icon in the design yet, so it uses a Material moon. The avatar on the status pill shows the driver's initial;
+its ring is the backend connection (green, yellow, red). Icons in `app/src/main/res/drawable/` are exported from the Figma file. Ending a trip shows a summary popup (average speed, top speed, alertness) with a link to the report card, which shows the report the backend generated and shared with friends and family (image and summary, from the `report` frame) above the phone's own risk chart. Stats is the weekly dashboard and trip history from Tiger Data; while the backend is unreachable it lists the trips kept on the phone instead. Contacts lists the backend allowlist (guardian switch, Telegram invite links,
+"Create group" for the family chat); Settings links to the Debug screen.
+
+Visual style: the mockups are in [`docs/design/figma/`](../docs/design/figma/README.md). Colors, type styles and the shared
+white card (`Modifier.card()`: soft blue shadow, hairline edge) live in `ui/Theme.kt`; every screen except Debug uses them.
+The Stats tiles use `material-icons-extended` for the icons the Figma export doesn't have.
 
 Yawns: Presage has no yawn metric, so `FaceSampler` (core) runs every face-landmark frame through `YawnDetector`.
 To tune `FaceGeometry.MAR_YAWN` (0.6), turn demo mode off, start a trip and watch `adb logcat -s Presage`: one

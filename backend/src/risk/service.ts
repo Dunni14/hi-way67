@@ -9,6 +9,7 @@ import { observe } from "./expression.ts";
 import { renderReportImage } from "../report/image.ts";
 import { applyCard, applyFeedback, normalizeProfile, notifyThreshold } from "./profile.ts";
 import { defaultMults, dominantFactor } from "./score.ts";
+import { driverStats } from "./stats.ts";
 import type { GpsSampleRow, RiskStore, TripRow } from "./store/types.ts";
 import { erraticGpsLevel, isStopped, speedingLevel, windowFeatures, motionBetween } from "../gps/features.ts";
 import { advanceMotion, initialMotion, type Motion, type MotionEvent } from "../gps/lifecycle.ts";
@@ -323,6 +324,13 @@ export class RiskService {
         };
       }),
     );
+  }
+
+  /** Dashboard for the app's Stats tab: the driver's report cards from the last [days] local days. */
+  async stats(driverId: string, days = 7) {
+    const now = new Date();
+    const since = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1));
+    return driverStats(driverId, await this.store.listCards(driverId, since.toISOString()), now, days);
   }
 
   async driverPolicy(driverId: string) {

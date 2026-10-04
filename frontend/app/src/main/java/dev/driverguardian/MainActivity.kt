@@ -25,12 +25,14 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import dev.driverguardian.net.Conn
 import dev.driverguardian.trip.TripController
 import dev.driverguardian.ui.DashcamScreen
 import dev.driverguardian.ui.DriverGuardianColors
-import dev.driverguardian.ui.PlaceholderScreen
+import dev.driverguardian.ui.ContactsScreen
 import dev.driverguardian.ui.TabBar
-import dev.driverguardian.ui.TripHistoryScreen
+import dev.driverguardian.ui.LocalTripHistoryScreen
+import dev.driverguardian.ui.StatsDashboard
 import dev.driverguardian.ui.TripRecapDialog
 import dev.driverguardian.ui.DebugScreen
 import dev.driverguardian.ui.ReportCardScreen
@@ -81,8 +83,9 @@ class MainActivity : ComponentActivity() {
         val voice by vm.voiceState.collectAsState()
         val settings by vm.settingsFlow.collectAsState()
         val report by vm.report.collectAsState()
+        val contacts by vm.contacts.collectAsState()
         val shared by vm.sharedReport.collectAsState()
-        val history by vm.history.collectAsState()
+        val localHistory by vm.localHistory.collectAsState()
         var showReport by remember { mutableStateOf(false) }
         val parked = !ui.running || ui.speedMph < 3
         val recap by vm.recap.collectAsState()
@@ -92,13 +95,18 @@ class MainActivity : ComponentActivity() {
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f)) {
                 when (tab) {
-                    // The report card of the trip that just ended (with what the backend shared, once it arrives); Done drops back to the history list.
-                    "stats" -> report?.takeIf { showReport }?.let { ReportCardScreen(it, shared) { showReport = false } }
-                        ?: TripHistoryScreen(history, onOpenLatest = if (report != null) ({ showReport = true }) else null)
-                    "contacts" -> PlaceholderScreen(
-                        "Contacts",
-                        "Who gets alerts is set on the backend for now: contacts.json lists guardians (alerts and location) " +
-                            "and friends (messages and roasts, no location). How much you share is under Settings.",
+                    // The report card of the trip that just ended (with what the backend shared, once it arrives); Done drops back to Stats.
+                    // Stats is the Tiger Data dashboard; without a backend connection, the trips kept on the phone.
+                    "stats" -> {
+                        val openLatest = if (report != null) ({ showReport = true }) else null
+                        report?.takeIf { showReport }?.let { ReportCardScreen(it, shared) { showReport = false } }
+                            ?: if (conn == Conn.CONNECTED) StatsDashboard(api = vm.history, driverHint = settings.driverName, onOpenLastReport = openLatest)
+                            else LocalTripHistoryScreen(localHistory, onOpenLatest = openLatest)
+                    }
+                    "contacts" -> ContactsScreen(
+                        state = contacts, conn = conn,
+                        onRefresh = vm::refreshContacts, onAdd = vm::addContact, onRemove = vm::removeContact,
+                        onGuardian = vm::setGuardian, onCloseInvite = vm::clearInvite, onJoinedSeen = vm::clearJoined,
                     )
                     "settings" -> if (showDebug) DebugScreen(ui, vm.client, conn) { showDebug = false }
                         else SettingsScreen(settings, onSave = vm::saveSettings, onDebug = { showDebug = true })
@@ -106,6 +114,7 @@ class MainActivity : ComponentActivity() {
                         ui = ui, conn = conn, voice = voice,
                         onStart = vm::startTrip, onEnd = vm::endTrip,
                         liveSensing = !settings.demoMode,
+                        driverName = settings.driverName,
                     )
                 }
             }

@@ -86,6 +86,7 @@ if (riskStore) {
 }
 
 startPhoneServer(config.port, onPhone, () => ({
+  driverName: trip.driverName, // the driver id trips are stored under (GET /drivers/{id}/trips)
   tripActive: trip.active,
   sharingMode: trip.sharingMode,
   latestR: trip.latest?.R ?? null,

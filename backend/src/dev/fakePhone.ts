@@ -1,6 +1,7 @@
 // Plays the Android app so the backend can be tested without it.
 //   npm run fake-phone             scripted demo run (calm -> drowsy -> microsleep)
 //   npm run fake-phone -- -i       interactive: type commands (see HELP)
+//   npm run fake-phone -- --contacts   contact frames: list, add (telegram and imessage), list, then exit
 // Sends raw-signal risk_windows like the app; the backend's risk engine scores them and decides
 // every alert. Received `speak` audio is saved to out/speak-N.mp3 and acked with speak_done.
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -9,7 +10,9 @@ import WebSocket from "ws";
 
 const url = process.env.PHONE_WS_URL ?? `ws://localhost:${process.env.PORT ?? 8787}/phone`;
 const interactive = process.argv.includes("-i");
-const HELP = `commands: start | end | win <calm|drowsy|micro|angry> [count] | say <text> [as <context>] | share <always|high_only|never> | kids <on|off> | quit`;
+const contactsDemo = process.argv.includes("--contacts");
+const HELP = `commands: start | end | win <calm|drowsy|micro|angry> [count] | say <text> [as <context>] | share <always|high_only|never> | kids <on|off>
+          | contacts | add <telegram|imessage> <name> [guardian|friend] [phone] | rm <handle> | role <handle> <guardian|friend> | quit`;
 
 mkdirSync("out", { recursive: true });
 const ws = new WebSocket(url);
@@ -60,6 +63,17 @@ ws.on("message", (data) => {
 ws.on("open", async () => {
   send({ type: "hello", driverName: "Alex", sharingMode: "always", kidsInCar: false });
   if (interactive) return repl();
+  if (contactsDemo) {
+    send({ type: "contacts_list" });
+    await sleep(300);
+    send({ type: "contact_add", name: "Sam", role: "friend", platform: "telegram" });
+    await sleep(300);
+    send({ type: "contact_add", name: "Mom", role: "guardian", platform: "imessage", phone: "+15551234567" });
+    await sleep(300);
+    send({ type: "contacts_list" });
+    await sleep(500);
+    process.exit(0);
+  }
 
   // Same profile as the app's demo mode: baseline, calm, drowsy (tier 2 after 3 drowsy windows), microsleep (tier 3).
   send({ type: "trip_start" });
@@ -91,6 +105,10 @@ async function repl() {
       }
       case "share": send({ type: "settings", sharingMode: rest[0] }); break;
       case "kids": send({ type: "settings", kidsInCar: rest[0] === "on" }); break;
+      case "contacts": send({ type: "contacts_list" }); break;
+      case "add": send({ type: "contact_add", platform: rest[0], name: rest[1], role: rest[2] ?? "friend", phone: rest[3] }); break;
+      case "rm": send({ type: "contact_remove", handle: rest[0] }); break;
+      case "role": send({ type: "contact_update", handle: rest[0], role: rest[1] ?? "guardian" }); break;
       case "quit": process.exit(0);
       default: console.log(HELP);
     }

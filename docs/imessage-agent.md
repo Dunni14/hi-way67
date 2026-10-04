@@ -15,12 +15,23 @@ It then loops over `app.messages` and handles inbound messages only. A handler e
 
 ### Group chat capture
 
-The agent learns which group is "the family chat" at runtime. Nothing is configured.
+The agent learns which group is "the family chat" at runtime, or from `GROUP_CHAT_ID`.
 
 - The first group message from an **allowlisted** contact captures that group.
 - Anyone sending `/start` (or `/start@YourBot`, which Telegram sends from the command menu) in a group captures it, and the agent replies with a greeting. This command does **not** check the allowlist.
 - Telegram groups are detected by a negative chat id.
-- The capture lives in memory. After a restart, someone has to post in the group again.
+- Each capture (both ways above) is saved to `backend/.group.json` (gitignored) as `{ platform, id }`.
+- At startup, `restoreGroup()` rebinds the group through the provider's `space.get(id)`: from `GROUP_CHAT_ID` (+ `GROUP_CHAT_PLATFORM`, default `telegram`) if set, otherwise from `.group.json`. If that fails, the error is logged and capture works as above. With `GROUP_CHAT_ID` set, a later `/start` elsewhere still updates `.group.json`, but the env var wins on the next restart.
+
+### Adding contacts from the phone app
+
+The allowlist is live: `contacts.ts` keeps it in memory and writes every change back to `CONTACTS_PATH` (temp file, then rename). Without the file, dev mode (everyone is a guardian) lasts until the first contact is added.
+
+- **Telegram:** the app sends `contact_add` with `platform: "telegram"`. The backend creates a 6-character invite code (single use, 15 min, in memory) and returns `contact_invite` with `https://t.me/<TELEGRAM_BOT_USERNAME>?start=<code>`. Opening it sends `/start <code>` to the bot in a private chat; the bot adds the sender's numeric id with the name and role from the invite, replies "You're on Alex's road crew 🚗", and sends `contact_joined` to the phone. Their DM space is cached, so `dm()` reaches them right away. A bad or expired code gets a short error reply.
+- **iMessage:** not available from the app yet; add the phone number to `contacts.json`.
+- Telegram handles are stored raw (`"123456789"`), never normalized like phone numbers, and match only Telegram senders.
+
+See [protocol.md](protocol.md#contact_add) for the frames.
 
 DM spaces are cached per contact as they arrive. When none is cached, `dm()` opens a new DM for iMessage contacts only. Telegram bots can't start a chat, so a Telegram contact is only reachable by DM after they've messaged the bot privately; otherwise `dm()` logs a warning and skips them.
 
@@ -39,7 +50,7 @@ An 85-tier alert posts "⚠️ Alex is at high risk…" to the whole chat and th
 1. Create the bot with @BotFather and put the token in `TELEGRAM_BOT_TOKEN`; include `telegram` in `SPECTRUM_PROVIDERS`.
 2. **Turn privacy mode off:** BotFather → `/setprivacy` → your bot → Disable. Then remove and re-add the bot to the group (the setting applies on join). With privacy on, the bot only sees commands, so roasts and questions never arrive.
 3. Start the backend **without** `NO_SPECTRUM`, then send `/start` in the group. The log shows `group chat bound via /start`.
-4. Have each person write something in the group. Unknown senders are logged with a ready-made line, e.g. `{"handle":"123456789","name":"<name>","role":"friend","platform":"telegram"}`. Paste it into `contacts.json`, set the name and role, and restart.
+4. Set `TELEGRAM_BOT_USERNAME` and add each person from the app (invite link, see above). Or by hand: have each person write something in the group. Unknown senders are logged with a ready-made line, e.g. `{"handle":"123456789","name":"<name>","role":"friend","platform":"telegram"}`. Paste it into `contacts.json`, set the name and role, and restart.
 5. For guardian-only messages (the location link) to reach a Telegram guardian, they must message the bot privately once.
 
 ## Roles

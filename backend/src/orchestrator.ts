@@ -6,12 +6,13 @@ import type { PhoneMsg, Tier, Dominant } from "./ws/protocol.ts";
 import { sendToPhone } from "./ws/server.ts";
 import { driverQueue } from "./voice/driverQueue.ts";
 import { ackLine, alertLine, ASKS_REST_STOP, gradeOf, interventionLine, messageLine, permissionLine, roastLine, speedingNudge } from "./voice/lines.ts";
-import { post, dm, postImage, dmImage, type Inbound } from "./agent/spectrum.ts";
+import { post, dm, postImage, dmImage, hasGroup, type Inbound } from "./agent/spectrum.ts";
 import { classify, shortenForSpeech } from "./agent/classifier.ts";
 import { answerQuestion } from "./agent/answer.ts";
 import { parseDriverUtterance } from "./agent/driverIntent.ts";
 import { roast } from "./agent/roast.ts";
-import { allContacts } from "./agent/contacts.ts";
+import { allContacts, contactPlatform, removeContact, setContactRole } from "./agent/contacts.ts";
+import { createInvite } from "./agent/invites.ts";
 import type { Evaluation } from "./risk/types.ts";
 import type { EvaluationExtra, RiskService } from "./risk/service.ts";
 import { renderReportImage } from "./report/image.ts";
@@ -75,7 +76,47 @@ export function createOrchestrator(store: TripStore, restStops = new RestStopFin
       case "speak_done":
         driverQueue.done(msg.id);
         return;
+
+      case "contacts_list":
+        return sendContacts();
+
+      case "contact_remove":
+        if (!removeContact(msg.handle)) sendToPhone({ type: "error", message: `No contact with handle ${msg.handle}` });
+        return sendContacts();
+
+      case "contact_update":
+        if (!setContactRole(msg.handle, msg.role)) sendToPhone({ type: "error", message: `No contact with handle ${msg.handle}` });
+        return sendContacts();
+
+      case "contact_add":
+        return onContactAdd(msg);
     }
+  }
+
+  function sendContacts() {
+    const bot = config.spectrum.providers.includes("telegram") ? config.telegramBotUsername : "";
+    sendToPhone({
+      type: "contacts",
+      list: allContacts().map((c) => ({ ...c, platform: contactPlatform(c) })),
+      groupBound: hasGroup(),
+      groupLink: bot ? `https://t.me/${bot}?startgroup=start` : null,
+    });
+  }
+
+  /** Telegram: invite link the contact opens to join (spectrum.ts redeems it). iMessage: not offered yet. */
+  function onContactAdd(msg: Extract<PhoneMsg, { type: "contact_add" }>) {
+    if (msg.platform === "imessage") {
+      sendToPhone({ type: "error", message: "Adding iMessage contacts from the app isn't available yet." });
+      return;
+    }
+    if (!config.spectrum.providers.includes("telegram") || !config.telegramBotUsername) {
+      sendToPhone({ type: "error", message: "Telegram invites need telegram in SPECTRUM_PROVIDERS and TELEGRAM_BOT_USERNAME on the backend." });
+      return;
+    }
+    const code = createInvite(msg.name, msg.role);
+    const link = `https://t.me/${config.telegramBotUsername}?start=${code}`;
+    console.log(`[contacts] invite for ${msg.name} (${msg.role}): ${link}`);
+    sendToPhone({ type: "contact_invite", name: msg.name, code, link });
   }
 
   /** Score one phone window in the engine; its hook (onRiskEvaluation) handles voice and contacts. */
