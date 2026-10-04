@@ -4,7 +4,7 @@ Brief: [frontend.md](frontend.md). Wire format: [../backend/PROTOCOL.md](../back
 
 - `core/`: pure Kotlin/JVM, no Android. Frames (protocol mirror), `WindowAggregator` (raw signals per 10 s window), face geometry (eye closure, closure runs, yawns), scripted demo and `DemoClock`, report card, JVM tests. **No scoring**: the backend's risk engine scores every window and decides every alert.
 - `../android/`: standalone Presage SmartSpectra demo (face-metrics overlay). Reference for the SDK setup the app uses; not part of this Gradle build.
-- `app/`: Android shell, portrait. CameraX preview, OkHttp `BackendClient` (reconnect, buffered windows), GPS/IMU, alarm, `VoicePlayer` (plays the backend's ElevenLabs audio, listens for replies), Compose UI (dashcam, debug, settings, report card).
+- `app/`: Android shell, portrait. CameraX preview, OkHttp `BackendClient` (reconnect, buffered windows), GPS/IMU, alarm, `VoicePlayer` (plays the backend's ElevenLabs audio, listens for replies), Compose UI (dashcam with a 3D Mapbox map and a small camera preview, debug, settings, report card). The map (`ui/DriveMap.kt`) needs a Mapbox public token: copy `mapbox_access_token.xml.example` to `app/src/main/res/values/mapbox_access_token.xml` (gitignored).
 
 ## Build and test
 

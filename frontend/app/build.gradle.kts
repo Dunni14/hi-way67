@@ -52,4 +52,5 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("com.google.guava:guava:33.3.1-android") // ListenableFuture for CameraX
     implementation("com.presagetech:smartspectra:3.4.0")
+    implementation("com.mapbox.maps:android-ndk27:11.32.0") // -ndk27: 16 KB page size support, needed at targetSdk 36
 }

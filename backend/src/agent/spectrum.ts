@@ -70,7 +70,9 @@ async function route(space: Space, message: Message, onMessage: (m: Inbound) => 
   if (/^\/start(@\w+)?$/i.test(text) && isGroup) {
     groupSpace = space;
     console.log(`[spectrum] group chat bound via /start: ${platform} ${space.id}`);
-    await space.send(`Hi! I'm ${config.driverName}'s driving buddy. Ask me where ${config.driverName} is, or send a message for me to read to them.`);
+    await space.send(
+      "Hi everyone! I'm Driver Guardian, this group's driving buddy. While someone's on the road, ask me where they are or how they're doing, or send them a message and I'll read it out loud.",
+    );
     return;
   }
   if (!contact) {
