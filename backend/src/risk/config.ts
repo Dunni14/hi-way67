@@ -30,6 +30,41 @@ const Config = z.object({
   notifyCooldownS: pos,
   degradedAfterWindows: z.number().int().positive(),
   feedback: z.object({ falseAlarm: pos, confirmed: pos, min: pos, max: pos }),
+  expression: z.object({ drowsyEye: pos, drowsyYawns: pos, drowsyClosureS: pos, stress: pos, gazeS: pos, calmEngagement: pos, calmStress: pos }),
+  report: z.object({
+    formulaVersion: z.number().int().positive(),
+    penalty: z.object({ meanRisk: z.number(), p90Risk: z.number(), tier2Frac: z.number(), tier3Frac: z.number(), microsleep: z.number(), microsleepCap: pos }),
+    highLevel: pos,
+    grades: z.object({ A: z.number(), B: z.number(), C: z.number(), D: z.number() }),
+    minWindows: z.number().int().positive(),
+    fullConfidenceWindows: pos,
+  }),
+  gps: z.object({
+    /** Fraction over the posted limit that maps to speeding = 1. */
+    speedingOverFull: pos,
+    accuracyMaxM: pos,
+    minGoodFixes: z.number().int().positive(),
+    /** Heading is noise below this speed and is ignored. */
+    headingMinSpeedMps: z.number().min(0),
+    erratic: z.object({ accelLow: z.number(), accelFull: z.number(), headingLow: z.number(), headingFull: z.number() }),
+    /** Posted limit (mph) by OSM `highway` class when a way has no usable `maxspeed`. */
+    fallbackLimitsMph: z.record(z.string(), pos),
+    trip: z.object({ startSpeedMps: pos, startHoldS: pos, stopSpeedMps: pos, stopHoldS: pos }),
+    lookup: z.object({ radiusM: pos, timeoutMs: pos, cacheMax: z.number().int().positive(), cacheTtlS: pos, failureBackoffS: pos, maxInflight: z.number().int().positive() }),
+    restStop: z.object({ radiusKm: pos, coneDeg: pos, timeoutMs: pos }),
+    /** A fix older than this is reported as stale to contacts. */
+    staleFixS: pos,
+  }),
+  adaptive: z.object({
+    careNeutral: z.number(),
+    careAlpha: pos,
+    shiftPerPoint: z.number(),
+    minNotify: pos,
+    maxNotify: pos,
+    learnedClamp: pos,
+    falseAlarmShift: z.number(),
+    confirmedShift: z.number(),
+  }),
 });
 
 export type RiskConfig = z.infer<typeof Config>;

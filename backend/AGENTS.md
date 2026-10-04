@@ -11,6 +11,7 @@ Node / TypeScript backend for Driver Guardian (MHacks 26). It talks to the Andro
 - `src/voice/`: ElevenLabs TTS, the one-at-a-time driver speech queue, spoken line templates.
 - `src/risk/`: logistic risk engine (pure core, service, Postgres store). `src/http/risk.ts`: its REST routes.
 - `src/bandit/`: adaptive recommendations (LinUCB over the tier the risk engine chose; pure math, service, Tiger Data store; config in `bandit.json`). Needs `TIGER_DATABASE_URL`. Never touches tiers or cooldowns.
+- `src/gps/`: phone GPS. Pure features, trip start/stop, Overpass speed limit and rest stop lookups, reverse geocoding, location text, card route. Scored in `risk/service.ts`. See [`../docs/gps.md`](../docs/gps.md).
 - `src/trip/`: live trip state, and the `TripStore` interface. The only implementation is in-memory; Tiger Data is a TODO.
 - `src/llm/openrouter.ts`: LLM client. Every LLM call has a non-LLM fallback. Keep it that way so the demo never stalls.
 - `src/dev/`: `fakePhone.ts` (simulates the Android app), `smokeTts.ts`, and `fakeDb.ts` (seeded PGlite stand-in for Tiger).
@@ -26,7 +27,7 @@ The risk engine (`src/risk/`) is the only scorer. The phone sends raw-signal `ri
 - `TIGER_DATABASE_URL=… npm run smoke:tiger`: end-to-end check against a real Tiger Data instance (creates tables, runs one throwaway trip through the engine and bandit, deletes its rows). See `.env.example` for the TLS note.
 - `npm run typecheck`: run this after every change.
 - `npm run dev:fake`: risk REST API on a seeded in-process Postgres (no Tiger, no `DATABASE_URL`). `npm run seed:fake` prints what it holds.
-- `npm test`: risk engine unit and HTTP tests (in-process Postgres via PGlite, no server needed).
+- `npm test`: risk engine and GPS unit, HTTP and replay tests (in-process Postgres via PGlite, no server needed). `npx tsx src/dev/makeDrive.ts` regenerates the synthetic GPX drive.
 
 TypeScript runs straight from source with `tsx`, so there is no build step. Imports use explicit `.ts` extensions (`verbatimModuleSyntax`, `allowImportingTsExtensions`). `noUncheckedIndexedAccess` is on.
 
@@ -34,6 +35,8 @@ TypeScript runs straight from source with `tsx`, so there is no build step. Impo
 
 - Alert lines are templates in `voice/lines.ts`, not LLM output, so they are instant and predictable.
 - Anything spoken to the driver goes through `driverQueue.enqueue()`. Never send `speak` directly.
+- Location reaches Photon only through `trip.mapsLink()` / `locationText()` / `endLocationText()` in `trip/state.ts`: they return nothing when the driver turned location sharing off. Never read `trip.lastFix` for a Photon message directly.
+- Never block scoring on the network: `SpeedLimitProvider.lookup` answers from cache or the last known limit, and fetches in the background.
 - Never send location to friends: `answer.ts` filters facts by role before the LLM sees them, and guardian alerts use `post(text, "guardian")`.
 - Mid-tier (40/70) events are voice only. Never post them to the group chat.
 

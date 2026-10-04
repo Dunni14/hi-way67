@@ -44,3 +44,29 @@ test("generation is deterministic", async () => {
   assert.deepEqual((await other.db.query(q)).rows[0], (await fake.db.query(q)).rows[0]);
   await other.db.close();
 });
+
+test("every seeded trip has a stored report card, observations and a driver scorecard", async () => {
+  const cards = (await fake.db.query(`SELECT trip_id, score, grade, duration_s, distance_mi, tier0_s + tier1_s + tier2_s + tier3_s AS tier_s FROM report_cards ORDER BY trip_id`)).rows as any[];
+  assert.equal(cards.length, 12);
+  for (const c of cards) assert.ok(c.score >= 0 && c.score <= 100 && c.duration_s > 0 && c.distance_mi > 0, JSON.stringify(c));
+
+  const clean = ((await fake.db.query(`SELECT score FROM report_cards WHERE trip_id = 'fake-alex-4'`)).rows[0] as any).score; // all calm
+  const drowsy = ((await fake.db.query(`SELECT score FROM report_cards WHERE trip_id = 'fake-alex-2'`)).rows[0] as any).score;
+  assert.ok(clean > 90 && drowsy < clean - 20, `clean ${clean}, drowsy ${drowsy}`);
+
+  assert.ok(((await fake.db.query(`SELECT count(*)::int AS n FROM observations`)).rows[0] as any).n === 1150);
+  const alex: any = await fake.service.profile("alex");
+  assert.equal(alex.scorecard.scored_trips, 5);
+});
+
+test("a trip's report and history survive the raw windows being dropped", async () => {
+  const before: any = await fake.service.report("fake-sam-6");
+  await fake.db.query(`DELETE FROM windows WHERE trip_id = 'fake-sam-6'`); // what the 7-day retention policy does
+  const after: any = await fake.service.report("fake-sam-6");
+  assert.equal(after.card.score, before.card.score);
+  assert.equal(after.grade, before.grade);
+  assert.equal(after.max_score, before.card.metrics.max_risk);
+  assert.ok(after.series.length > 0 && after.series.length < before.series.length);
+  const hist: any = await fake.service.driverTrips("sam");
+  assert.equal((hist.trips ?? hist).find((t: any) => t.trip_id === "fake-sam-6").grade, before.grade);
+});

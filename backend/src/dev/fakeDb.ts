@@ -35,7 +35,13 @@ SELECT date_bin(INTERVAL '5 minutes', ts, TIMESTAMPTZ '2000-01-01') AS bucket, t
   count(*) FILTER (WHERE tier = 0) AS windows_tier0, count(*) FILTER (WHERE tier = 1) AS windows_tier1,
   count(*) FILTER (WHERE tier = 2) AS windows_tier2, count(*) FILTER (WHERE tier = 3) AS windows_tier3,
   avg(drowsy) AS avg_drowsy, sum(hard_brakes) AS hard_brakes, sum(swerves) AS swerves
-FROM windows GROUP BY 1, trip_id, driver_id`;
+FROM windows GROUP BY 1, trip_id, driver_id;
+CREATE OR REPLACE VIEW gps_10s AS
+SELECT date_bin(INTERVAL '10 seconds', time, TIMESTAMPTZ '2000-01-01') AS bucket, trip_id, driver_id,
+  avg(speed_mps) AS speed_avg_mps, max(speed_mps) AS speed_max_mps, max(accel_mps2) AS accel_max_mps2,
+  max(heading_rate_dps) AS heading_rate_dps, (array_agg(lat ORDER BY time DESC))[1] AS lat,
+  (array_agg(lon ORDER BY time DESC))[1] AS lon, count(*) AS fixes
+FROM gps_samples GROUP BY 1, trip_id, driver_id`;
 
 // ---------------------------------------------------------------------------------------------
 // Deterministic data generator
@@ -156,6 +162,7 @@ export async function openFakeDb(opts: { dir?: string; seed?: boolean } = {}): P
         }
       }
       await store.endTrip(tripId, new Date(start + (len + 1) * WINDOW_MS).toISOString());
+      await service.endTrip(tripId); // stores the report card and moves the driver's profile, like a real trip end
       seeded.trips++;
     }
   }

@@ -46,7 +46,7 @@ An 85-tier alert posts "⚠️ Alex is at high risk…" to the whole chat and th
 
 | Role | Can ask questions | Gets location | Gets 85-tier alerts | Can message / roast driver |
 |---|---|---|---|---|
-| Guardian | Yes | Yes (in answers, and the location DM at 85) | Yes (group alert + location DM) | Yes |
+| Guardian | Yes | Yes (in answers, and the location message at 85), unless the driver turned location sharing off. See [gps.md](gps.md#photon-imessage-agent) | Yes (group alert + location by DM) | Yes |
 | Friend | Yes, without location | No | Yes, in the group, without location | Yes |
 
 ## Message handling

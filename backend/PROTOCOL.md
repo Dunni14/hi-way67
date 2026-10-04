@@ -9,8 +9,8 @@ The phone senses and displays; the backend's risk engine (`src/risk`) scores eve
 
 | type | fields | when |
 |---|---|---|
-| `hello` | `driverName?`, `sharingMode` (`always`/`high_only`/`never`), `kidsInCar` | on connect |
-| `settings` | `sharingMode?`, `kidsInCar?` | toggle changed |
+| `hello` | `driverName?`, `sharingMode` (`always`/`high_only`/`never`), `kidsInCar`, `shareLocation` (default `true`) | on connect |
+| `settings` | `sharingMode?`, `kidsInCar?`, `shareLocation?` | toggle changed |
 | `trip_start` / `trip_end` | none | trip begins / ends |
 | `risk_window` | `ts` (epoch ms, real time, unique), `speed` (mph), `lat?`, `lon?`, `events[]` (`yawn`,`nod`,`hard_brake`,`swerve`), `signals` (raw, below) | every 10 s (faster in demo mode) |
 | `utterance` | `text`, `context` (copy the `context` of the `speak` you listened after, or `free`) | speech-to-text result |

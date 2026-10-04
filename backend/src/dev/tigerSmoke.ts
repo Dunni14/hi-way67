@@ -21,6 +21,7 @@ const driver = `smoke-${Date.now().toString(36)}`;
 try {
   const riskStore = new PgRiskStore(risk);
   await riskStore.migrate();
+  console.log(`[smoke] risk store timescale steps: ${(await riskStore.migrateTimescale()) ? "applied" : "skipped (no TimescaleDB)"}`);
   const banditStore = new PgBanditStore(tiger);
   await banditStore.migrate();
 
@@ -46,14 +47,19 @@ try {
   const row = policy.actions.find((a) => a.action === "calm_checkin")!;
   console.log(`[smoke] intervention=${first.id}, calm_checkin updates=${row.updates}, mean_reward=${row.mean_reward}`);
   assert.equal(row.updates, 1, "reward settled and the model was updated");
+
+  // End the trip: report card, observations and decision log must land in Tiger.
+  const ended: any = await svc.endTrip(trip_id);
+  const count = async (table: string) => (await risk.query(`SELECT count(*)::int AS n FROM ${table} WHERE trip_id = $1`, [trip_id])).rows[0].n;
+  assert.equal(await count("report_cards"), 1, "report card stored");
+  assert.equal(await count("observations"), 21, "one observation per window");
+  console.log(`[smoke] card score=${ended.card.score} grade=${ended.card.grade}, decision_log rows=${await count("decision_log")}`);
   console.log("[smoke] OK");
 } finally {
   const q = (db: pg.Pool, sql: string) => db.query(sql, [driver]).catch((e) => console.warn("[smoke] cleanup:", e.message));
   await q(tiger, `DELETE FROM bandit_events WHERE driver_id = $1`);
   await q(tiger, `DELETE FROM bandit_models WHERE driver_id = $1`);
-  await q(risk, `DELETE FROM events WHERE trip_id IN (SELECT trip_id FROM trips WHERE driver_id = $1)`);
-  await q(risk, `DELETE FROM windows WHERE trip_id IN (SELECT trip_id FROM trips WHERE driver_id = $1)`);
-  await q(risk, `DELETE FROM trips WHERE driver_id = $1`);
+  for (const t of ["report_cards", "decision_log", "observations", "events", "windows", "trips"]) await q(risk, `DELETE FROM ${t} WHERE driver_id = $1`);
   await q(risk, `DELETE FROM drivers WHERE driver_id = $1`);
   await tiger.end();
   if (risk !== tiger) await risk.end();

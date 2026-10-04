@@ -45,11 +45,13 @@ export const PhoneMsg = z.discriminatedUnion("type", [
     driverName: z.string().optional(),
     sharingMode: SharingMode.default("high_only"),
     kidsInCar: z.boolean().default(false),
+    shareLocation: z.boolean().default(true), // false: no lat/lon ever goes to the iMessage agent
   }),
   z.object({
     type: z.literal("settings"),
     sharingMode: SharingMode.optional(),
     kidsInCar: z.boolean().optional(),
+    shareLocation: z.boolean().optional(),
   }),
   z.object({ type: z.literal("trip_start") }),
   z.object({ type: z.literal("trip_end") }),

@@ -16,7 +16,7 @@ const columns = (sql: string, table: string): string[] => {
 
 const file = readFileSync(new URL("../../sql/01_schema.sql", import.meta.url), "utf8");
 
-for (const table of ["drivers", "trips", "windows", "events"]) {
+for (const table of ["drivers", "trips", "windows", "events", "observations", "report_cards", "decision_log", "gps_samples"]) {
   test(`schema.ts and sql/01_schema.sql agree on ${table}`, () => {
     const app = columns(SCHEMA_SQL, table).sort();
     const sql = columns(file, table).sort();

@@ -238,7 +238,7 @@ test("two trips of one driver settling at once both update the model", async () 
 
 test("the in-process hook receives the intervention with the evaluation", async () => {
   const seen: any[] = [];
-  const hooked = new RiskService(riskStore, undefined, (_t, ev, iv) => void seen.push({ tier: ev.tier, iv }), bandit);
+  const hooked = new RiskService(riskStore, undefined, (_t, ev, extra) => void seen.push({ tier: ev.tier, iv: extra.intervention }), bandit);
   const { trip_id } = await hooked.startTrip({ driver_id: "hooked", kids_in_car: false, low_experience: false, sleep_hours: 4 });
   for (let i = 0; i <= 7; i++) await hooked.ingestWindow(trip_id, { ...NEUTRAL, ...(i < 6 ? {} : DROWSY), ts: new Date(T0 + i * 10_000).toISOString() });
   assert.equal(seen.length, 8);

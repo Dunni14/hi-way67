@@ -18,3 +18,4 @@ npm run fake-phone                                # in a second terminal: simula
 - [Implementation status and known issues](../docs/status.md)
 - [Backend setup, env vars, module reference](../docs/backend.md)
 - [WebSocket protocol](../docs/protocol.md) (short version: [PROTOCOL.md](PROTOCOL.md))
+- [GPS: payload, speed limits, trip start/stop, location privacy](../docs/gps.md)

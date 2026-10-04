@@ -1,2 +1,7 @@
 sdk.dir=/path/to/android/sdk
 PRESAGE_API_KEY=your-presage-api-key
+# Drive screen -> backend (REST). Emulator default is http://10.0.2.2:8787. On a phone use the laptop's LAN IP
+# (same Wi-Fi, port 8787 open) or an https tunnel URL. Plain http only works in debug builds.
+BACKEND_URL=http://10.0.2.2:8787
+DRIVER_ID=demo
+SHARE_LOCATION=true

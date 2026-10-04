@@ -210,7 +210,7 @@ After each trip (stretch):
 
 ## 8. Surroundings (stretch)
 
-- GPS speed against a fixed demo speed limit (live speed-limit lookups need a paid maps key)
+- GPS speed against the posted limit from OpenStreetMap (free Overpass API, hand-set fallback by road class), see [docs/gps.md](docs/gps.md)
 - Weather from Open-Meteo (free, no key): rain, snow, low visibility
 - Time of day / night driving
 

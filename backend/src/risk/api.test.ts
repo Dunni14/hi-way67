@@ -156,3 +156,52 @@ test("validation and not-found errors", async () => {
   assert.equal((await call("GET", `/trips/${t}/state`)).status, 200);
   assert.equal((await call("GET", "/trips/nope/state")).status, 404);
 });
+
+test("trip end stores a report card, observations and moves the driver profile", async () => {
+  const bad = { speed_mph: 95, phone_in_hand: true, emotion_stress: 1, heart_rate: 100 };
+  const t = await startTrip("iris");
+  await drive(t, bad, 70);
+  const end = (await call("POST", `/trips/${t}/end`)).body;
+  assert.equal(end.ended, true);
+  assert.ok(end.card.score < 40 && end.card.confidence === 1 && !end.card.provisional);
+  assert.equal(end.card.expression.dominant, "stressed");
+  assert.equal(end.card.metrics.duration_s, 700);
+  assert.ok(end.card.profile.care_after < end.card.profile.care_before);
+  const row = (await db.query(`SELECT * FROM report_cards WHERE trip_id = $1`, [t])).rows[0] as any;
+  assert.equal(row.score, end.card.score);
+  assert.equal(row.dominant_expression, "stressed");
+  assert.equal(row.tier0_s + row.tier1_s + row.tier2_s + row.tier3_s, 640);
+  assert.equal(row.care_after, end.card.profile.care_after);
+
+  const obs = (await call("GET", `/trips/${t}/observations`)).body;
+  assert.equal(obs.length, 70);
+  assert.equal(obs[69].expression, "stressed");
+
+  assert.deepEqual((await call("GET", `/trips/${t}/card`)).body.features, end.card.features);
+  assert.equal((await call("POST", `/trips/${t}/end`)).body.card.score, end.card.score); // idempotent, profile not re-applied
+
+  const p = (await call("GET", "/drivers/iris/profile")).body;
+  assert.equal(p.scoredTrips, 1);
+  assert.ok(p.careIndex < 75);
+  assert.ok(p.notify_threshold < p.default_notify_threshold);
+
+  const hist = (await call("GET", "/drivers/iris/trips")).body;
+  assert.equal(hist[0].card_grade, end.card.grade);
+
+  const rep = (await call("GET", `/trips/${t}/report`)).body;
+  assert.equal(rep.card.score, end.card.score);
+});
+
+test("feedback on a notification rewards the logged decision and shifts the threshold", async () => {
+  const t = await startTrip("jack");
+  await drive(t, { speed_mph: 95, phone_in_hand: true, emotion_stress: 1, heart_rate: 100 }, 12);
+  const rows = (await db.query(`SELECT ts, action, context FROM decision_log WHERE trip_id = $1 AND action = 'notify_contacts'`, [t])).rows as any[];
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].context.length, 8);
+  const before = (await call("GET", "/drivers/jack/profile")).body.notify_threshold;
+  await call("POST", `/trips/${t}/feedback`, { window_ts: new Date(rows[0].ts).toISOString(), verdict: "false_alarm" });
+  const after = (await call("GET", "/drivers/jack/profile")).body;
+  assert.equal(after.notify_threshold, before + 2);
+  const reward = ((await db.query(`SELECT reward FROM decision_log WHERE trip_id = $1 AND action = 'notify_contacts'`, [t])).rows as any[])[0].reward;
+  assert.equal(reward, -1);
+});

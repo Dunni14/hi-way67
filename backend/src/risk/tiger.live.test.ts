@@ -20,6 +20,7 @@ let svc: RiskService;
 let tripId = "";
 
 const cleanup = async () => {
+  for (const t of ["report_cards", "decision_log", "observations"]) await pool.query(`DELETE FROM ${t} WHERE driver_id = $1`, [DRIVER]);
   await pool.query(`DELETE FROM events WHERE driver_id = $1`, [DRIVER]);
   await pool.query(`DELETE FROM windows WHERE driver_id = $1`, [DRIVER]);
   await pool.query(`DELETE FROM trips WHERE driver_id = $1`, [DRIVER]);
@@ -31,6 +32,7 @@ before(async () => {
   pool = new pg.Pool({ connectionString: url });
   store = new PgRiskStore(pool);
   await store.migrate();
+  await store.migrateTimescale();
   svc = new RiskService(store);
   await cleanup();
 });
@@ -86,5 +88,41 @@ test("continuous aggregates roll the trip up", { skip }, async () => {
 test("retention and aggregate policies are installed", { skip }, async () => {
   const { rows } = await pool.query(`SELECT proc_name, hypertable_name FROM timescaledb_information.jobs WHERE proc_name IN ('policy_retention', 'policy_refresh_continuous_aggregate')`);
   assert.ok(rows.some((r) => r.proc_name === "policy_retention" && r.hypertable_name === "windows"));
-  assert.equal(rows.filter((r) => r.proc_name === "policy_refresh_continuous_aggregate").length, 2);
+  assert.ok(rows.some((r) => r.proc_name === "policy_retention" && r.hypertable_name === "gps_samples"));
+  assert.equal(rows.filter((r) => r.proc_name === "policy_refresh_continuous_aggregate").length, 3); // windows_30s, trip_summary_5m, gps_10s
+});
+
+test("report-card tables are hypertables with the right policies", { skip }, async () => {
+  const hyper = (await pool.query(`SELECT hypertable_name FROM timescaledb_information.hypertables`)).rows.map((r) => r.hypertable_name);
+  for (const t of ["windows", "events", "observations", "decision_log"]) assert.ok(hyper.includes(t), `${t} is a hypertable`);
+  const jobs = (await pool.query(`SELECT proc_name, hypertable_name FROM timescaledb_information.jobs`)).rows;
+  const has = (proc: string, table: string) => jobs.some((j) => j.proc_name === proc && j.hypertable_name === table);
+  assert.ok(has("policy_retention", "observations") && has("policy_retention", "windows"));
+  assert.ok(has("policy_compression", "windows") && has("policy_compression", "observations") && has("policy_compression", "decision_log"));
+  assert.ok(!jobs.some((j) => j.proc_name === "policy_retention" && ["report_cards", "events", "decision_log"].includes(j.hypertable_name)), "long-term tables have no retention");
+});
+
+test("ending a trip stores observations, a decision log and a report card that outlives the raw windows", { skip }, async () => {
+  const { trip_id } = (await svc.startTrip({ driver_id: DRIVER, kids_in_car: false, low_experience: false, sleep_hours: 7 })) as { trip_id: string };
+  const t0 = Date.now() - 30 * 10_000;
+  for (let i = 0; i < 30; i++) {
+    const o = i < 6 ? {} : { speed_mph: 90, phone_in_hand: true, emotion_stress: 1, heart_rate: 100 };
+    await svc.ingestWindow(trip_id, { ...NEUTRAL, ...o, ts: new Date(t0 + i * 10_000).toISOString() });
+  }
+  const end: any = await svc.endTrip(trip_id);
+  assert.ok(end.card.score < 60 && end.card.metrics.duration_s === 300);
+
+  const n = async (table: string) => (await pool.query(`SELECT count(*)::int AS n FROM ${table} WHERE trip_id = $1`, [trip_id])).rows[0].n;
+  assert.equal(await n("observations"), 30);
+  assert.ok((await n("decision_log")) >= 1);
+  const row = (await pool.query(`SELECT score, grade, tier0_s, distance_mi, jsonb_array_length(series) AS pts FROM report_cards WHERE trip_id = $1`, [trip_id])).rows[0];
+  assert.equal(row.score, end.card.score);
+  assert.ok(row.pts >= 10 && row.distance_mi > 0);
+
+  await pool.query(`DELETE FROM windows WHERE trip_id = $1`, [trip_id]); // what retention does after 7 days
+  const report: any = await svc.report(trip_id);
+  assert.equal(report.card.score, end.card.score);
+  assert.ok(report.series.length >= 10);
+  const profile: any = await svc.profile(DRIVER);
+  assert.equal(profile.scorecard.scored_trips, 1);
 });

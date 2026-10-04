@@ -5,16 +5,16 @@ import type { RiskConfig } from "./config.ts";
 import { computeLevels } from "./levels.ts";
 import { defaultMults, scoreOf } from "./score.ts";
 import { baselineOf, smooth, type Baseline } from "./smoothing.ts";
-import type { Action, Evaluation, Levels, Override, SignalWindow, Tier, TripContext, WeightMults } from "./types.ts";
+import type { Action, Evaluation, Levels, Override, EngineWindow, Tier, TripContext, WeightMults } from "./types.ts";
 
 export type EngineState = {
   /** Last `smoothingWindows` raw windows. */
-  recent: SignalWindow[];
+  recent: EngineWindow[];
   /** Windows seen so far this trip. */
   count: number;
   baseline: Baseline | null;
   /** Raw windows collected while the baseline is being set. */
-  baselineAcc: SignalWindow[];
+  baselineAcc: EngineWindow[];
   /** Raw score tier of the previous scored window (for the 2-window hold). */
   prevRawTier: Tier;
   drowsyStreak: number;
@@ -46,10 +46,12 @@ const tierOfScore = (R: number, cfg: RiskConfig): Tier =>
 
 export function processWindow(
   prev: EngineState,
-  w: SignalWindow,
+  w: EngineWindow,
   ctx: TripContext,
   cfg: RiskConfig,
   mults: WeightMults = defaultMults(),
+  /** Score needed to text contacts below tier 3 (or above it, to hold back tier 3 without an override). Defaults to the urgent tier. */
+  notifyThreshold: number = cfg.tiers.urgent,
 ): { evaluation: Evaluation; state: EngineState } {
   const s = structuredClone(prev);
   const nowMs = Date.parse(w.ts);
@@ -108,14 +110,24 @@ export function processWindow(
   // Kids in the car raise any active tier by one.
   if (ctx.kidsInCar && tier >= 1) tier = Math.min(3, tier + 1) as Tier;
 
-  const actions = actionsFor(tier, s, nowMs, ctx, cfg);
+  const actions = actionsFor(tier, s, nowMs, ctx, cfg, { score: sc.score, override, threshold: notifyThreshold });
   return {
     evaluation: { score: round1(sc.score), tier, dominant: sc.dominant, actions, levels, override, degraded },
     state: s,
   };
 }
 
-function actionsFor(tier: Tier, s: EngineState, nowMs: number, ctx: TripContext, cfg: RiskConfig): Action[] {
+type NotifyGate = { score: number; override: Override | null; threshold: number };
+
+/**
+ * Tier 3 notifies when an override or the kids rule raised it, or its score reaches the threshold
+ * (so a careful driver's higher threshold holds back a plain score-driven tier 3). Tier 2 notifies
+ * only when the threshold was lowered below the urgent tier and the score reaches it.
+ */
+const wantsNotify = (tier: Tier, ctx: TripContext, cfg: RiskConfig, g: NotifyGate) =>
+  tier === 3 ? g.override != null || ctx.kidsInCar || g.score >= g.threshold : tier === 2 && g.threshold < cfg.tiers.urgent && g.score >= g.threshold;
+
+function actionsFor(tier: Tier, s: EngineState, nowMs: number, ctx: TripContext, cfg: RiskConfig, gate: NotifyGate): Action[] {
   if (tier === 0) return ["none"];
   const out: Action[] = [];
   const last = s.lastVoiceMs[tier];
@@ -123,7 +135,7 @@ function actionsFor(tier: Tier, s: EngineState, nowMs: number, ctx: TripContext,
     out.push(VOICE[tier]);
     s.lastVoiceMs[tier] = nowMs;
   }
-  if (tier === 3 && (s.lastNotifyMs == null || nowMs - s.lastNotifyMs >= cfg.notifyCooldownS * 1000)) {
+  if (wantsNotify(tier, ctx, cfg, gate) && (s.lastNotifyMs == null || nowMs - s.lastNotifyMs >= cfg.notifyCooldownS * 1000)) {
     out.push(ctx.sharingOn ? "notify_contacts" : "ask_permission_to_notify");
     s.lastNotifyMs = nowMs;
   }

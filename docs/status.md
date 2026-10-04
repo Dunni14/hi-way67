@@ -34,6 +34,7 @@ The phone app is [`frontend/`](../frontend) (Driver Guardian). It **senses and d
 | Score | Done (backend) | Engine: z = Σ ln(odds ratio) × level (cited SHRP 2 / AAA values in `weights.json`), capped at ln 50, scaled 0–100. The phone scorer was removed. |
 | Context multiplier | Done (backend) | Kids in car / low experience +15 % each. |
 | Server-side logistic risk engine (REST + Postgres) | Done (backend) | Odds-ratio weights, baseline, overrides, cooldowns, feedback, report. See [risk-engine.md](risk-engine.md). The phone must call it; the legacy phone-computed path still works. |
+| Trip report card, expression observations, adaptive notify threshold | Done (backend) | Stored per window and per trip; the care index lowers or raises the score needed to text contacts. Persisted on Tiger Data with retention and compression ([persistence.md](persistence.md)). Decisions and feedback rewards are logged in `decision_log` (separate from the bandit's `bandit_events`); no learner trains on it yet. See [risk-engine.md](risk-engine.md). |
 | Adaptive recommendations (LinUCB bandit, Tiger Data) | Done (backend) | Picks the intervention within tier 1/2; `intervention` on the windows response, `GET /drivers/{id}/policy`. Off without `TIGER_DATABASE_URL`. The in-process voice path speaks the chosen intervention; REST clients choose their own script from `intervention.id`. `family_voice_warning` needs `ELEVENLABS_FAMILY_VOICE_ID`. See [risk-engine.md](risk-engine.md#adaptive-recommendations-contextual-bandit). |
 | Weights | Done (backend) | `backend/src/risk/weights.json`. Drowsy OR 3.4 is flagged "check paper"; erratic is a placeholder. |
 | "I'm fine" learning | Done (backend) | Recorded as false-alarm feedback: the dominant factor's weight ×0.95 for this driver (clamped 0.5–1.5, stored), bandit penalty. The phone shows the new multiplier. |
@@ -106,6 +107,11 @@ The tree is split between phone and backend. See [architecture.md](architecture.
 |---|---|---|
 | GPS speed | Built | Frontend `MotionSource` (demo mode fakes 65 mph). |
 | Speed vs. fixed demo limit | Built | `speed_over_limit` feature. |
+| GPS speed and location | Done (backend), phone not started | `gps` field on the 10 s window feeds `speeding` and `erratic`; location goes into the tier 3 alert and guardian answers. See [gps.md](gps.md). The legacy `risk_window` `lat`/`lon` still works. |
+| Speed vs. posted limit | Done (backend) | OpenStreetMap through Overpass, cached, never blocks scoring, hand-set fallback by road class (flagged in the report card). Not measured on a real drive yet. |
+| Trip start/stop from GPS | Done (backend) | 4 m/s for 20 s starts, under 1 m/s for 5 min ends the trip. |
+| Rest stop and limit in voice lines, route on the report card | Done (backend) | `voice/lines.ts`, `card.gps`. |
+| GPS DDL on Tiger | Not applied | `gps_samples`, `gps_10s` and the retention policy are in `sql/01_schema.sql`, tested on plain Postgres only. Re-run both SQL files on the service. |
 | Open-Meteo weather | Not started | |
 | Night-time driving | Built | `night_time` feature on the phone; the backend also uses 22:00–05:00 for the late-night trip note. |
 | `surroundings_risk` feature | Not started | |

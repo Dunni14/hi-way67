@@ -47,6 +47,8 @@ Set `NO_SPECTRUM=1` to run only the phone side (voice and protocol testing witho
 | `OPENROUTER_API_KEY` | none | For LLM features | Classifier, answers, shortening |
 | `MODEL_CLASSIFY` / `MODEL_ANSWER` / `MODEL_SHORTEN` | `anthropic/claude-haiku-4.5` | No | OpenRouter model slug per job |
 | `PORT` | `8787` | No | HTTP + WebSocket port |
+| `OVERPASS_URLS` | `overpass-api.de`, `overpass.openstreetmap.fr` | No | Comma list of Overpass endpoints for posted speed limits and rest stops, tried in order. See [gps.md](gps.md) |
+| `GEOCODER_URL` | Nominatim `/reverse` | No | Reverse geocoder for the road and city in guardian location text |
 | `DRIVER_NAME` | `Alex` | No | Default driver name. The phone's `hello` can override it in trip state, but LLM prompts still use this value (see [status.md](status.md#known-issues-and-gaps)). |
 | `CONTACTS_PATH` | `contacts.json` | No | Allowlist file |
 | `NO_SPECTRUM` | unset | No | Skip the Spectrum connection |

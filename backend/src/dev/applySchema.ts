@@ -1,4 +1,4 @@
-// Applies sql/01_schema.sql then sql/02_seed.sql to DATABASE_URL (Tiger Data). The schema runs one
+// Applies sql/01_schema.sql, sql/02_seed.sql and sql/03_policies.sql to DATABASE_URL (Tiger Data). The schema runs one
 // statement at a time: continuous aggregates can't be created inside a transaction, which a
 // multi-statement query would be. The seed runs as one query (it has ";" inside strings and no
 // aggregates). Both files are idempotent, so re-running is safe.
@@ -44,6 +44,16 @@ try {
   failed++;
   console.error(`[02_seed.sql] ${(err as Error).message}`);
 }
+const policies = statements("03_policies.sql");
+for (const sql of policies) {
+  try {
+    await client.query(sql);
+  } catch (err) {
+    failed++;
+    console.error(`[03_policies.sql] ${(err as Error).message}\n  in: ${sql.split("\n")[0]!.slice(0, 100)}`);
+  }
+}
+console.log(`03_policies.sql: ${policies.length} statements run`);
 const tables = await client.query(
   `SELECT hypertable_name FROM timescaledb_information.hypertables ORDER BY 1`,
 ).catch(() => ({ rows: [] as { hypertable_name: string }[] }));
