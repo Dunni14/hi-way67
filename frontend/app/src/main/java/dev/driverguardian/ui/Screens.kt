@@ -5,7 +5,11 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import dev.driverguardian.sensing.PresagePreview
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -17,7 +21,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontFamily
@@ -26,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import dev.driverguardian.R
 import dev.driverguardian.data.AppSettings
 import dev.driverguardian.net.BackendClient
 import dev.driverguardian.net.Conn
@@ -33,16 +45,25 @@ import dev.driverguardian.trip.UiState
 import dev.driverguardian.voice.VoicePlayer
 import dg.core.SPEED_LIMIT_MPH
 import dg.core.SharingMode
+import kotlinx.coroutines.launch
 
-/** Color for the risk engine's tier (0 none, 1 nudge, 2 warning, 3 urgent). */
-private fun tierColor(tier: Int) = when (tier) {
-    3 -> Color(0xFFE53935)
-    2 -> Color(0xFFFB8C00)
-    1 -> Color(0xFFFDD835)
-    else -> Color(0xFF43A047)
-}
+// Palette and shapes from the Figma file (MHacks | AutoAI, "UI" section).
+private val Main = Color(0xFF366DE1) // Menu main
+private val Good = Color(0xFF30A54D)
+private val Bad = Color(0xFFF35C5C)
+private val Warn = Color(0xFFFFB74D)
+private val SystemText = Color(0xFF495675) // System color
+private val OnSurface = Color(0xFF1D1B20)
+private val Surface = Color(0xFFF9FCFE) // Background color
+private val TabBg = Color(0xFFFDFDFD) // Tab background
+private val Pressed = Color(0xFFECF4FD) // Button pressed
+private val ScreenBg = Brush.verticalGradient(listOf(Color(0xFFF3F8FE), Color(0xFFECF4FE)))
+private val CardShape = RoundedCornerShape(20.dp)
+private val Label = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, lineHeight = 15.sp, letterSpacing = 0.5.sp)
 
-/** Why the engine raised the tier, in plain words. */
+val DriverGuardianColors = lightColorScheme(primary = Main, surface = Surface, onSurface = OnSurface)
+
+/** Why the risk engine raised the tier, in plain words. */
 private fun overrideText(o: String?) = when (o) {
     "microsleep" -> "eyes closed too long"
     "drowsy_sustained_3", "drowsy_sustained_12" -> "drowsy for a while"
@@ -51,107 +72,152 @@ private fun overrideText(o: String?) = when (o) {
     else -> o
 }
 
-// Wireframe palette: light gray panels with dark text over the (dimmed) camera.
-private val Panel = Color(0xFFE6E6E6)
-private val PanelText = Color(0xFF1E1E1E)
-private val PanelLabel = Color(0xFF555555)
-
-/** Drive tab (wireframe "Drive"): status pill, speed vs limit, trip button, four status tiles. */
+/** Drive tab (Figma "Drive"): status pill, speed vs limit, camera card with the trip button, four status tiles. */
 @Composable
 fun DashcamScreen(
     ui: UiState, conn: Conn, voice: VoicePlayer.State,
     onStart: () -> Unit, onEnd: () -> Unit,
     liveSensing: Boolean = false,
 ) {
-    val parked = !ui.running || ui.speedMph < 3
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
-        // Recreate the preview when ownership flips, so the app never holds the camera Presage needs.
-        key(liveSensing) { CameraPreview(Modifier.fillMaxSize(), sdkOwnsCamera = liveSensing) }
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)))
+    Column(Modifier.fillMaxSize().background(ScreenBg).statusBarsPadding().padding(start = 15.dp, end = 15.dp, top = 8.dp, bottom = 14.dp)) {
+        StatusPill(ui, conn, voice, Modifier.align(Alignment.CenterHorizontally))
 
-        Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 16.dp, vertical = 12.dp)) {
-            StatusPill(ui, conn, voice, Modifier.align(Alignment.CenterHorizontally))
-
-            Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
-                Column {
-                    Text(if (ui.running) "%.0f".format(ui.speedMph) else "--", color = Color.White, fontSize = 64.sp, fontWeight = FontWeight.Bold, lineHeight = 64.sp)
-                    Text("current\nspeed", color = Color.White, fontSize = 13.sp, lineHeight = 15.sp)
-                }
-                Column(
-                    Modifier.clip(RoundedCornerShape(14.dp)).background(Panel).padding(horizontal = 14.dp, vertical = 8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text("speed limit", color = PanelLabel, fontSize = 12.sp)
-                    Text("%.0f".format(SPEED_LIMIT_MPH), color = PanelText, fontSize = 34.sp, fontWeight = FontWeight.Bold)
-                }
+        Row(
+            Modifier.fillMaxWidth().padding(start = 24.dp, end = 15.dp, top = 4.dp, bottom = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(if (ui.running) "%.0f".format(ui.speedMph) else "--", color = Good, fontSize = 45.sp, fontWeight = FontWeight.Medium, lineHeight = 52.sp)
+                Text("current\nspeed", color = SystemText, style = Label, textAlign = TextAlign.Center)
             }
+            Column(
+                Modifier.size(85.dp, 86.dp).clip(CardShape).background(Surface),
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
+            ) {
+                Text("%.0f".format(SPEED_LIMIT_MPH), color = SystemText, fontSize = 32.sp, fontWeight = FontWeight.Medium, lineHeight = 34.sp)
+                Text("speed\nlimit", color = SystemText, style = Label, textAlign = TextAlign.Center)
+            }
+        }
 
-            Spacer(Modifier.weight(1f))
-
-            // Controls only work while parked; nothing here matters while moving.
+        // The design shows a map in this card. The app has no map, so the card holds the driver camera.
+        Box(Modifier.fillMaxWidth().weight(1f).clip(CardShape).background(Color.Black)) {
+            // Recreate the preview when ownership flips, so the app never holds the camera Presage needs.
+            key(liveSensing) { CameraPreview(Modifier.fillMaxSize(), sdkOwnsCamera = liveSensing) }
+            val button = Modifier.align(Alignment.BottomCenter).padding(12.dp).fillMaxWidth()
             if (ui.running) {
-                Button(onClick = onEnd, enabled = parked, modifier = Modifier.fillMaxWidth()) { Text("End trip") }
+                HoldButton("Hold to end trip", button, onHeld = onEnd)
             } else {
-                Button(onClick = onStart, modifier = Modifier.fillMaxWidth()) { Text("Start trip") }
+                Button(onClick = onStart, modifier = button, shape = CardShape) { Text("Start trip") }
             }
-            Spacer(Modifier.height(10.dp))
-            val tiles = statusTiles(ui, voice)
-            tiles.chunked(2).forEach { row ->
-                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    row.forEach { t -> StatusTile(t, Modifier.weight(1f)) }
-                }
+        }
+
+        statusTiles(ui, voice).chunked(2).forEach { row ->
+            Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                row.forEach { t -> StatusTile(t, Modifier.weight(1f)) }
             }
         }
     }
 }
 
-private data class Tile(val label: String, val value: String, val detail: String = "", val tint: Color? = null)
+/** Fires [onHeld] only after a continuous hold, so a stray touch while driving can't end the trip. */
+@Composable
+private fun HoldButton(text: String, modifier: Modifier, holdMs: Int = 1500, onHeld: () -> Unit) {
+    val progress = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    val held by rememberUpdatedState(onHeld)
+    Box(
+        modifier.height(48.dp).clip(CardShape).background(Main)
+            .drawBehind { drawRect(Bad, size = Size(size.width * progress.value, size.height)) }
+            .pointerInput(Unit) {
+                detectTapGestures(onPress = {
+                    val fill = scope.launch {
+                        progress.animateTo(1f, tween(holdMs, easing = LinearEasing))
+                        held()
+                    }
+                    tryAwaitRelease()
+                    fill.cancel()
+                    progress.snapTo(0f)
+                })
+            },
+        contentAlignment = Alignment.Center,
+    ) { Text(text, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium) }
+}
 
-/** The wireframe's four tiles, filled with what the app actually measures. */
+/** The design's three tile states: green value, blue value, red tile. NONE is "no reading yet". */
+private enum class Level { GREAT, GOOD, BAD, NONE }
+
+private data class Tile(val label: String, val icon: Int?, val value: String, val detail: String = "", val level: Level = Level.NONE)
+
+/** The design's four tiles, filled with what the app actually measures (drowsiness in place of distraction). */
 private fun statusTiles(ui: UiState, voice: VoicePlayer.State): List<Tile> {
-    if (!ui.running) return listOf(Tile("attention", "--"), Tile("eye tracking", "--"), Tile("drowsiness", "--"), Tile("speech activity", "--"))
+    val eye = R.drawable.ic_attention
+    val focus = R.drawable.ic_eye_tracking
+    val mic = R.drawable.ic_mic
+    if (!ui.running) return listOf(Tile("Attention", eye, "--"), Tile("Drowsiness", null, "--"), Tile("Eye Tracking", focus, "--"), Tile("Speech", mic, "--"))
     val attention = when {
-        ui.calibrating -> Tile("attention", "CALIBRATING", "${ui.calibrationLeftSec}s left")
+        ui.calibrating -> Tile("Attention", eye, "--", "calibrating ${ui.calibrationLeftSec}s")
         else -> Tile(
-            "attention",
+            "Attention", eye,
             when (ui.tier) { 3 -> "DANGER"; 2 -> "POOR"; 1 -> "FAIR"; else -> "GOOD" },
             overrideText(ui.override) ?: "risk %.0f".format(ui.score),
-            tint = if (ui.tier >= 1) tierColor(ui.tier) else null,
+            when { ui.tier >= 2 -> Level.BAD; ui.tier == 1 -> Level.GOOD; else -> Level.GREAT },
+        )
+    }
+    // The risk engine's drowsy level (0..1); 0.6 held for 3 windows is its tier 2 trigger.
+    val drowsyLevel = ui.levels["drowsy"] ?: 0.0
+    val drowsy = when {
+        ui.calibrating -> Tile("Drowsiness", null, "--", "yawns ${ui.yawnCount}")
+        else -> Tile(
+            "Drowsiness", null,
+            when { drowsyLevel >= 0.6 -> "HIGH"; drowsyLevel >= 0.3 -> "MEDIUM"; else -> "LOW" },
+            "yawns ${ui.yawnCount}",
+            when { drowsyLevel >= 0.6 -> Level.BAD; drowsyLevel >= 0.3 -> Level.GOOD; else -> Level.GREAT },
         )
     }
     val eyes = when {
-        !ui.faceVisible -> Tile("eye tracking", "NO FACE", tint = Color(0xFFFFB74D))
-        ui.liveEyeClosed == null -> Tile("eye tracking", "--")
+        !ui.faceVisible -> Tile("Eye Tracking", focus, "NO FACE", level = Level.BAD)
+        ui.liveEyeClosed == null -> Tile("Eye Tracking", focus, "--")
         else -> Tile(
-            "eye tracking",
+            "Eye Tracking", focus,
             when { ui.liveEyeClosed >= 0.65 -> "CLOSED"; ui.liveEyeClosed >= 0.35 -> "HEAVY"; else -> "NORMAL" },
             "%.0f%% closed".format(ui.liveEyeClosed * 100),
+            when { ui.liveEyeClosed >= 0.65 -> Level.BAD; ui.liveEyeClosed >= 0.35 -> Level.GOOD; else -> Level.GREAT },
         )
     }
-    // The engine's drowsy level; 0.6 held for 30 s is its tier 2 trigger.
-    val drowsyLevel = ui.levels["drowsy"] ?: 0.0
-    val drowsy = Tile(
-        "drowsiness",
-        when { ui.calibrating -> "--"; drowsyLevel >= 0.6 -> "HIGH"; drowsyLevel >= 0.3 -> "MEDIUM"; else -> "LOW" },
-        "yawns ${ui.yawnCount}",
-    )
+    val listening = voice == VoicePlayer.State.LISTENING
     val speech = Tile(
-        "speech activity",
-        when { voice == VoicePlayer.State.LISTENING -> "LISTENING"; ui.talking == true -> "HIGH"; else -> "LOW" },
+        "Speech", mic,
+        when { listening -> "LISTENING"; ui.talking == true -> "HIGH"; else -> "LOW" },
         ui.mouthOpen?.let { "mouth %.2f".format(it) } ?: "",
+        if (listening || ui.talking == true) Level.GOOD else Level.GREAT,
     )
-    return listOf(attention, eyes, drowsy, speech)
+    return listOf(attention, drowsy, eyes, speech)
 }
 
 @Composable
 private fun StatusTile(t: Tile, modifier: Modifier) {
-    Column(
-        modifier.clip(RoundedCornerShape(10.dp)).background(t.tint ?: Panel).padding(vertical = 8.dp, horizontal = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+    val bad = t.level == Level.BAD
+    val valueColor = when (t.level) { Level.GREAT -> Good; Level.GOOD -> Main; Level.BAD -> Surface; Level.NONE -> SystemText }
+    Row(
+        modifier.height(90.dp).clip(CardShape).background(if (bad) Bad else Color.White).padding(start = 16.dp, end = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(t.label, color = PanelLabel, fontSize = 12.sp)
-        Text(t.value, color = PanelText, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-        Text(t.detail, color = PanelLabel, fontSize = 11.sp, maxLines = 1)
+        Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+            if (t.icon != null) {
+                Icon(painterResource(t.icon), contentDescription = null, tint = if (bad) Surface else Main, modifier = Modifier.fillMaxSize())
+            } else {
+                // The design has no icon for this tile yet.
+                Text("zZ", color = if (bad) Surface else Main, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        Spacer(Modifier.width(10.dp))
+        Column {
+            Text(t.label, color = if (bad) Pressed else SystemText, style = Label, maxLines = 1)
+            // 24 sp is the design size; longer words than the design's shrink to stay on one line.
+            val size = when { t.value.length <= 5 -> 24.sp; t.value.length == 6 -> 20.sp; else -> 15.sp }
+            Text(t.value, color = valueColor, fontSize = size, fontWeight = FontWeight.Bold, lineHeight = 26.sp, maxLines = 1, softWrap = false)
+            if (t.detail.isNotEmpty()) Text(t.detail, color = if (bad) Pressed else SystemText, fontSize = 11.sp, lineHeight = 13.sp, maxLines = 1)
+        }
     }
 }
 
@@ -160,42 +226,51 @@ private fun StatusTile(t: Tile, modifier: Modifier) {
 private fun StatusPill(ui: UiState, conn: Conn, voice: VoicePlayer.State, modifier: Modifier) {
     val yawnFlash = System.currentTimeMillis() - ui.lastYawnAtMs < 4_000
     val (text, bg) = when {
-        !ui.running -> "ready: tap Start trip" to Panel
-        ui.alarmOn -> "PULL OVER NOW" to Color(0xFFE53935)
-        voice == VoicePlayer.State.LISTENING -> "listening… say \"I'm fine\"" to Color(0xFF90CAF9)
-        voice == VoicePlayer.State.SPEAKING -> "speaking…" to Color(0xFF90CAF9)
-        ui.calibrating -> "calibrating · ${ui.calibrationLeftSec}s" to Panel
-        !ui.faceVisible || ui.cantSeeDriver -> "can't see driver" to Color(0xFFFFB74D)
-        yawnFlash -> "yawn detected" to Color(0xFFFDD835)
-        else -> "driving: monitoring" to Panel
+        !ui.running -> "Ready • Tap Start trip" to TabBg
+        ui.alarmOn -> "PULL OVER NOW" to Bad
+        voice == VoicePlayer.State.LISTENING -> "Listening… say \"I'm fine\"" to Pressed
+        voice == VoicePlayer.State.SPEAKING -> "Speaking…" to Pressed
+        ui.calibrating -> "Calibrating • ${ui.calibrationLeftSec}s" to TabBg
+        !ui.faceVisible || ui.cantSeeDriver -> "Can't see driver" to Warn
+        yawnFlash -> "Yawn detected" to Color(0xFFFDD835)
+        else -> "Driving • Monitoring" to TabBg
     }
     Row(
-        modifier.clip(RoundedCornerShape(50)).background(bg).padding(horizontal = 14.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        modifier.height(36.dp).widthIn(min = 208.dp).clip(CardShape).background(bg).padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
     ) {
-        val dot = when (conn) { Conn.CONNECTED -> Color(0xFF43A047); Conn.CONNECTING -> Color(0xFFFDD835); else -> Color(0xFFE53935) }
-        Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
+        val dot = when (conn) { Conn.CONNECTED -> Good; Conn.CONNECTING -> Color(0xFFFDD835); else -> Bad }
+        Box(Modifier.size(8.dp).clip(CircleShape).background(if (bg == Bad) Surface else dot))
         Spacer(Modifier.width(8.dp))
-        Text(text, color = PanelText, fontSize = 13.sp)
+        Text(text, color = if (bg == Bad) Surface else SystemText, style = Label)
     }
 }
 
-/** Bottom tab bar from the wireframe. Only Drive is reachable while moving. */
+private val Tabs = listOf(
+    "drive" to R.drawable.ic_drive, "stats" to R.drawable.ic_statistics,
+    "contacts" to R.drawable.ic_groups, "settings" to R.drawable.ic_settings,
+)
+
+/** Bottom tab bar from the design. Only Drive is reachable while moving. */
 @Composable
 fun TabBar(selected: String, parked: Boolean, onSelect: (String) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().background(Color(0xFFD6D6D6)).navigationBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp),
+        Modifier.fillMaxWidth().background(TabBg).navigationBarsPadding().padding(start = 15.dp, end = 15.dp, top = 6.dp, bottom = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        for (tab in listOf("drive", "stats", "contacts", "settings")) {
+        for ((tab, icon) in Tabs) {
             val on = tab == selected
             val enabled = on || tab == "drive" || parked
-            Box(
-                Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(6.dp))
-                    .background(if (on) Color(0xFF555555) else Color(0xFF9E9E9E).copy(alpha = if (enabled) 1f else 0.4f))
+            val color = (if (on) Main else SystemText).copy(alpha = if (enabled) 1f else 0.35f)
+            Column(
+                Modifier.weight(1f).height(66.dp).clip(CardShape).background(if (on) Pressed else Color.Transparent)
                     .clickable(enabled = enabled) { onSelect(tab) },
-                contentAlignment = Alignment.Center,
-            ) { Text(tab, color = if (on) Color.White else PanelText, fontSize = 13.sp) }
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
+            ) {
+                Icon(painterResource(icon), contentDescription = null, tint = color, modifier = Modifier.size(28.dp))
+                Spacer(Modifier.height(4.dp))
+                Text(tab.replaceFirstChar { it.uppercase() }, color = color, style = Label)
+            }
         }
     }
 }
@@ -203,9 +278,9 @@ fun TabBar(selected: String, parked: Boolean, onSelect: (String) -> Unit) {
 /** Simple message screen for tabs that have nothing to show yet. */
 @Composable
 fun PlaceholderScreen(title: String, body: String) {
-    Column(Modifier.fillMaxSize().background(Color.White).statusBarsPadding().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(title, color = PanelText, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-        Text(body, color = PanelLabel, fontSize = 15.sp)
+    Column(Modifier.fillMaxSize().background(ScreenBg).statusBarsPadding().padding(horizontal = 24.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(title, color = OnSurface, fontSize = 22.sp)
+        Text(body, color = SystemText, fontSize = 15.sp)
     }
 }
 
@@ -214,7 +289,9 @@ fun CameraPreview(modifier: Modifier, sdkOwnsCamera: Boolean = false) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     AndroidView(modifier = modifier, factory = { ctx ->
-        val view = PreviewView(ctx)
+        // TextureView mode: the default SurfaceView draws outside the rounded card and punches through
+        // whatever is drawn above it.
+        val view = PreviewView(ctx).apply { implementationMode = PreviewView.ImplementationMode.COMPATIBLE }
         val future = ProcessCameraProvider.getInstance(ctx)
         future.addListener({
             val provider = future.get()
@@ -271,12 +348,12 @@ private fun Mono(s: String) = Text(s, color = Color.White, fontFamily = FontFami
 fun SettingsScreen(s: AppSettings, onSave: (AppSettings) -> Unit, onDebug: () -> Unit) {
     var host by remember(s.host) { mutableStateOf(s.host) }
     var name by remember(s.driverName) { mutableStateOf(s.driverName) }
-    Column(Modifier.fillMaxSize().background(Color(0xFF101010)).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Settings", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+    Column(Modifier.fillMaxSize().background(ScreenBg).statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Settings", color = OnSurface, fontSize = 22.sp)
         OutlinedTextField(host, { host = it }, label = { Text("Backend host:port") }, singleLine = true)
         OutlinedTextField(name, { name = it }, label = { Text("Driver name") }, singleLine = true)
         Button(onClick = { onSave(s.copy(host = host, driverName = name)) }) { Text("Save host and name") }
-        Text("Share state with guardian", color = Color.White)
+        Text("Share state with guardian", color = OnSurface)
         Column {
             listOf(SharingMode.ALWAYS to "Always", SharingMode.HIGH_ONLY to "High risk only", SharingMode.NEVER to "Never").forEach { (m, label) ->
                 FilterChip(selected = s.sharingMode == m, onClick = { onSave(s.copy(sharingMode = m)) }, label = { Text(label) })
@@ -284,11 +361,11 @@ fun SettingsScreen(s: AppSettings, onSave: (AppSettings) -> Unit, onDebug: () ->
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Switch(checked = s.kidsInCar, onCheckedChange = { onSave(s.copy(kidsInCar = it)) })
-            Spacer(Modifier.width(8.dp)); Text("Kids in car", color = Color.White)
+            Spacer(Modifier.width(8.dp)); Text("Kids in car", color = OnSurface)
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Switch(checked = s.demoMode, onCheckedChange = { onSave(s.copy(demoMode = it)) })
-            Spacer(Modifier.width(8.dp)); Text("Demo mode (scripted driver signals, fake 65 mph)", color = Color.White)
+            Spacer(Modifier.width(8.dp)); Text("Demo mode (scripted driver signals, fake 65 mph)", color = OnSurface)
         }
         OutlinedButton(onClick = onDebug) { Text("Debug: features, weights, face values") }
     }

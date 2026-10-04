@@ -27,9 +27,12 @@ Turn demo mode off to use the real camera (Presage), GPS and IMU.
 
 Allow the microphone on first launch so spoken check-ins can hear "I'm fine" and roast replies. Logs: `adb logcat -s Presage Voice`.
 
-Drive tab (follows the Figma wireframe): status pill, current speed vs the fixed demo limit, Start/End trip, and four
-tiles: attention (risk tier), eye tracking (live eye closure), drowsiness (sub-score + yawn count), speech activity
-(Presage talking / mic listening). Stats shows the last report card; Contacts is a placeholder (contacts live in the
+Drive tab (follows the Figma "UI" design: light theme, white rounded tiles, icon tab bar): status pill, current speed
+vs the fixed demo limit, a rounded card with the driver camera (the design shows a map there) and the trip button
+(Start trip is a tap; ending needs a 1.5 s hold on "Hold to end trip" and works at any speed), and four tiles: attention (risk tier), drowsiness (sub-score + yawn count), eye tracking (live eye closure),
+speech (Presage talking / mic listening). Tiles use the design's three states: green value, blue value, red tile.
+The design's second tile is "Distraction"; the app shows drowsiness there because gaze is not measured, and that
+tile has no icon in the design yet. Icons in `app/src/main/res/drawable/` are exported from the Figma file. Stats shows the last report card; Contacts is a placeholder (contacts live in the
 backend's `contacts.json`); Settings links to the Debug screen.
 
 Yawns: Presage has no yawn metric, so `FaceSampler` (core) runs every face-landmark frame through `YawnDetector`.

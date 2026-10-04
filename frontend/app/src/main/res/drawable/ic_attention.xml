@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Exported from the Figma file (MHacks | AutoAI); tint at the call site. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="54.9961dp" android:height="40.9991dp"
+    android:viewportWidth="54.9961" android:viewportHeight="40.9991">
+    <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd" android:pathData="M54.9961 20.4995C54.9961 24.5995 42.6848 40.9991 27.498 40.9991C12.3113 40.9991 0 24.5995 0 20.4995C0 16.3996 12.3113 0 27.498 0C42.6848 0 54.9961 16.3996 54.9961 20.4995Z M14.0184,20.4994a13.4795,14.6425 0 1,0 26.9590,0a13.4795,14.6425 0 1,0 -26.9590,0Z M19.4103,20.4995a8.08769,8.78551 0 1,0 16.1754,0a8.08769,8.78551 0 1,0 -16.1754,0Z" />
+</vector>
