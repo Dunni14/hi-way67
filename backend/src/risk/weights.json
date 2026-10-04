@@ -8,21 +8,52 @@
     "erratic": 0.69
   },
   "sleep": [
-    { "underHours": 4, "add": 2.44 },
-    { "underHours": 5, "add": 1.46 },
-    { "underHours": 6, "add": 0.64 },
-    { "underHours": 7, "add": 0.26 }
+    {
+      "underHours": 4,
+      "add": 2.44
+    },
+    {
+      "underHours": 5,
+      "add": 1.46
+    },
+    {
+      "underHours": 6,
+      "add": 0.64
+    },
+    {
+      "underHours": 7,
+      "add": 0.26
+    }
   ],
   "oddsCap": 50,
-  "context": { "kids_in_car": 0.15, "low_experience": 0.15 },
+  "context": {
+    "kids_in_car": 0.15,
+    "low_experience": 0.15
+  },
   "levels": {
-    "drowsy": { "eyeClosure": 0.4, "eyeClosureFull": 0.3, "yawns": 0.2, "yawnsFull": 3, "engagement": 0.2, "breathing": 0.2, "breathingFull": 4 },
-    "agitated": { "stress": 0.6, "heartRate": 0.4, "heartRateFull": 25 },
+    "drowsy": {
+      "eyeClosure": 0.4,
+      "eyeClosureFull": 0.3,
+      "yawns": 0.2,
+      "yawnsFull": 3,
+      "engagement": 0.2,
+      "breathing": 0.2,
+      "breathingFull": 4
+    },
+    "agitated": {
+      "stress": 0.6,
+      "heartRate": 0.4,
+      "heartRateFull": 25
+    },
     "speedingFullMph": 20,
     "distractedFullS": 4,
     "erraticFull": 3
   },
-  "tiers": { "nudge": 40, "warning": 70, "urgent": 85 },
+  "tiers": {
+    "nudge": 40,
+    "warning": 70,
+    "urgent": 85
+  },
   "baselineWindows": 6,
   "smoothingWindows": 3,
   "holdWindows": 2,
@@ -36,5 +67,49 @@
   "cooldownS": 120,
   "notifyCooldownS": 600,
   "degradedAfterWindows": 3,
-  "feedback": { "falseAlarm": 0.95, "confirmed": 1.05, "min": 0.5, "max": 1.5 }
+  "feedback": {
+    "falseAlarm": 0.95,
+    "confirmed": 1.05,
+    "min": 0.5,
+    "max": 1.5
+  },
+  "expression": {
+    "drowsyEye": 0.15,
+    "drowsyYawns": 1,
+    "drowsyClosureS": 1,
+    "stress": 0.6,
+    "gazeS": 2,
+    "calmEngagement": 0.6,
+    "calmStress": 0.3
+  },
+  "report": {
+    "formulaVersion": 1,
+    "penalty": {
+      "meanRisk": 0.3,
+      "p90Risk": 0.2,
+      "tier2Frac": 30,
+      "tier3Frac": 30,
+      "microsleep": 10,
+      "microsleepCap": 3
+    },
+    "highLevel": 0.6,
+    "grades": {
+      "A": 90,
+      "B": 80,
+      "C": 65,
+      "D": 50
+    },
+    "minWindows": 12,
+    "fullConfidenceWindows": 60
+  },
+  "adaptive": {
+    "careNeutral": 75,
+    "careAlpha": 0.3,
+    "shiftPerPoint": 0.5,
+    "minNotify": 60,
+    "maxNotify": 95,
+    "learnedClamp": 10,
+    "falseAlarmShift": 2,
+    "confirmedShift": -1
+  }
 }

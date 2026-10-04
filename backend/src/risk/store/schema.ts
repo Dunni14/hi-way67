@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS drivers (
                      CHECK (sharing_mode IN ('always', 'high_risk_only', 'never')),
   has_family_voice BOOLEAN NOT NULL DEFAULT FALSE,
   weight_overrides JSONB NOT NULL DEFAULT '{}',
+  profile          JSONB NOT NULL DEFAULT '{}',
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -60,6 +61,7 @@ CREATE TABLE IF NOT EXISTS windows (
   PRIMARY KEY (trip_id, ts)
 );
 ALTER TABLE windows ADD COLUMN IF NOT EXISTS result JSONB;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS profile JSONB NOT NULL DEFAULT '{}';
 CREATE INDEX IF NOT EXISTS windows_driver_idx ON windows (driver_id, ts DESC);
 
 CREATE TABLE IF NOT EXISTS events (
@@ -71,6 +73,49 @@ CREATE TABLE IF NOT EXISTS events (
   actions   TEXT[] NOT NULL,
   override  INT,
   score     DOUBLE PRECISION,
+  PRIMARY KEY (trip_id, ts)
+);
+
+CREATE TABLE IF NOT EXISTS observations (
+  ts               TIMESTAMPTZ NOT NULL,
+  trip_id          TEXT NOT NULL,
+  driver_id        TEXT NOT NULL,
+  expression       TEXT NOT NULL,
+  intensity        DOUBLE PRECISION NOT NULL,
+  face_visible     BOOLEAN,
+  stress           DOUBLE PRECISION,
+  engagement       DOUBLE PRECISION,
+  eye_closure_frac DOUBLE PRECISION,
+  yawns            DOUBLE PRECISION,
+  gaze_off_road_s  DOUBLE PRECISION,
+  PRIMARY KEY (trip_id, ts)
+);
+
+CREATE TABLE IF NOT EXISTS report_cards (
+  trip_id         TEXT PRIMARY KEY,
+  driver_id       TEXT NOT NULL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  formula_version INT NOT NULL,
+  score           DOUBLE PRECISION NOT NULL,
+  grade           TEXT NOT NULL,
+  confidence      DOUBLE PRECISION NOT NULL,
+  card            JSONB NOT NULL,
+  features        DOUBLE PRECISION[] NOT NULL
+);
+CREATE INDEX IF NOT EXISTS report_cards_driver_idx ON report_cards (driver_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS bandit_events (
+  ts         TIMESTAMPTZ NOT NULL,
+  driver_id  TEXT NOT NULL,
+  trip_id    TEXT NOT NULL,
+  tier       INT NOT NULL,
+  dominant   TEXT NOT NULL,
+  action     TEXT NOT NULL,
+  context    DOUBLE PRECISION[] NOT NULL,
+  scores     JSONB NOT NULL,
+  learned    BOOLEAN NOT NULL DEFAULT FALSE,
+  reward     DOUBLE PRECISION,
+  reward_ts  TIMESTAMPTZ,
   PRIMARY KEY (trip_id, ts)
 );
 `;

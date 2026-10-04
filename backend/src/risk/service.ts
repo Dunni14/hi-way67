@@ -3,9 +3,12 @@
 import { randomUUID } from "node:crypto";
 import { riskConfig, type RiskConfig } from "./config.ts";
 import { initialState, processWindow, type EngineState } from "./decision.ts";
+import { buildCard, type ReportCard } from "./card.ts";
+import { observe } from "./expression.ts";
+import { applyCard, applyFeedback, normalizeProfile, notifyThreshold } from "./profile.ts";
 import { defaultMults, dominantFactor } from "./score.ts";
 import type { RiskStore, TripRow } from "./store/types.ts";
-import { FACTORS, type Evaluation, type Factor, type Feedback, type SharingMode, type SignalWindow, type Tier, type TripContext, type TripStart, type WeightMults } from "./types.ts";
+import { FACTORS, type Action, type Evaluation, type Factor, type Feedback, type SharingMode, type SignalWindow, type Tier, type TripContext, type TripStart, type WeightMults } from "./types.ts";
 
 export class HttpError extends Error {
   constructor(readonly status: number, message: string) {
@@ -58,18 +61,25 @@ export class RiskService {
     const ts = new Date(w.ts).toISOString();
     const driver = await this.store.getDriver(trip.driverId);
     const mults = { ...defaultMults(), ...driver?.weightOverrides };
-    const rt = await this.runtime(trip, driver?.sharingMode, mults);
+    const threshold = notifyThreshold(normalizeProfile(driver?.profile, this.cfg), this.cfg);
+    const rt = await this.runtime(trip, driver?.sharingMode, mults, threshold);
     rt.ctx.sharingOn = driver?.sharingMode !== "never";
 
     const hadBaseline = rt.state.baseline != null;
-    const { evaluation, state } = processWindow(rt.state, { ...w, ts }, rt.ctx, this.cfg, mults);
+    const { evaluation, state } = processWindow(rt.state, { ...w, ts }, rt.ctx, this.cfg, mults, threshold);
     const stored = await this.store.addWindow({ tripId, ts, raw: { ...w, ts }, result: evaluation, score: evaluation.score, tier: evaluation.tier });
     if (!stored) throw new HttpError(409, "duplicate window ts");
     rt.state = state;
+    await this.store.addObservation({ tripId, ...observe({ ...w, ts }, this.cfg) });
 
     if (!hadBaseline && state.baseline) await this.store.setBaseline(tripId, state.baseline);
     if (evaluation.actions.some((a) => a !== "none")) {
       await this.store.addEvent({ tripId, ts, tier: evaluation.tier, actions: evaluation.actions, override: evaluation.override });
+      await this.store.addDecision({
+        tripId, ts, tier: evaluation.tier, dominant: evaluation.dominant, action: mostSevere(evaluation.actions),
+        context: [...FACTORS.map((f) => evaluation.levels[f]), Number(rt.ctx.kidsInCar), Number(rt.ctx.lowExperience)],
+        scores: { score: evaluation.score, notify_threshold: threshold, override: evaluation.override, actions: evaluation.actions },
+      });
     }
     try {
       void Promise.resolve(this.onEvaluation?.(tripId, evaluation)).catch((e) => console.error("[risk] onEvaluation:", e));
@@ -80,12 +90,12 @@ export class RiskService {
   }
 
   /** Active-trip runtime; after a restart it is rebuilt by replaying stored windows (the core is deterministic). */
-  private async runtime(trip: TripRow, sharing: SharingMode | undefined, mults: WeightMults): Promise<Runtime> {
+  private async runtime(trip: TripRow, sharing: SharingMode | undefined, mults: WeightMults, threshold: number): Promise<Runtime> {
     const hit = this.runtimes.get(trip.id);
     if (hit) return hit;
     const ctx: TripContext = { kidsInCar: trip.kidsInCar, lowExperience: trip.lowExperience, sleepHours: trip.sleepHours, sharingOn: sharing !== "never" };
     let state = initialState();
-    for (const row of await this.store.getWindows(trip.id)) state = processWindow(state, row.raw, ctx, this.cfg, mults).state;
+    for (const row of await this.store.getWindows(trip.id)) state = processWindow(state, row.raw, ctx, this.cfg, mults, threshold).state;
     const rt = { state, ctx };
     this.runtimes.set(trip.id, rt);
     return rt;
@@ -93,7 +103,8 @@ export class RiskService {
 
   async feedback(tripId: string, fb: Feedback) {
     const trip = await this.mustTrip(tripId);
-    const win = await this.store.getWindow(tripId, new Date(fb.window_ts).toISOString());
+    const ts = new Date(fb.window_ts).toISOString();
+    const win = await this.store.getWindow(tripId, ts);
     if (!win) throw new HttpError(404, "no window at window_ts");
     const driver = await this.store.getDriver(trip.driverId);
     const mults: WeightMults = { ...defaultMults(), ...driver?.weightOverrides };
@@ -103,15 +114,32 @@ export class RiskService {
     const step = fb.verdict === "false_alarm" ? F.falseAlarm : F.confirmed;
     mults[factor] = Math.min(F.max, Math.max(F.min, mults[factor] * step));
     await this.store.setWeightOverrides(trip.driverId, Object.fromEntries(FACTORS.map((f) => [f, mults[f]])));
+
+    // Reinforcement: reward the logged decision; a judged notification also moves the driver's notify threshold.
+    const acted = await this.store.rewardDecision(tripId, ts, fb.verdict === "confirmed" ? 1 : -1);
+    if (acted === "notify_contacts" || acted === "ask_permission_to_notify") {
+      const profile = applyFeedback(normalizeProfile(driver?.profile, this.cfg), fb.verdict, this.cfg);
+      await this.store.setProfile(trip.driverId, profile);
+    }
     return { factor, multiplier: mults[factor] };
   }
 
   async endTrip(tripId: string) {
     const trip = await this.mustTrip(tripId);
-    if (!trip.endedAt) await this.store.endTrip(tripId, new Date().toISOString());
+    const first = !trip.endedAt;
+    if (first) await this.store.endTrip(tripId, new Date().toISOString());
     this.runtimes.delete(tripId);
     this.chains.delete(tripId);
-    return { trip_id: tripId, ended: true };
+    // The card is written once, when the trip first ends, and is what moves the driver's profile.
+    let stored = await this.store.getCard(tripId);
+    if (!stored) {
+      const card = await this.buildTripCard(trip);
+      stored = { tripId, driverId: trip.driverId, createdAt: new Date().toISOString(), card };
+      await this.store.saveCard(stored);
+      const driver = await this.store.getDriver(trip.driverId);
+      await this.store.setProfile(trip.driverId, applyCard(normalizeProfile(driver?.profile, this.cfg), card, this.cfg));
+    }
+    return { trip_id: tripId, ended: true, card: stored.card };
   }
 
   async state(tripId: string): Promise<Evaluation> {
@@ -125,7 +153,37 @@ export class RiskService {
   async report(tripId: string) {
     const trip = await this.mustTrip(tripId);
     const [windows, events] = await Promise.all([this.store.getWindows(tripId), this.store.getEvents(tripId)]);
-    return { trip_id: tripId, driver_id: trip.driverId, started_at: trip.startedAt, ended_at: trip.endedAt, ...summarize(windows), events };
+    const card = (await this.store.getCard(tripId))?.card ?? (await this.buildTripCard(trip));
+    return { trip_id: tripId, driver_id: trip.driverId, started_at: trip.startedAt, ended_at: trip.endedAt, ...summarize(windows), events, card };
+  }
+
+  /** Stored card once the trip has ended, otherwise computed live from what has arrived so far. */
+  async card(tripId: string): Promise<ReportCard> {
+    const trip = await this.mustTrip(tripId);
+    return (await this.store.getCard(tripId))?.card ?? (await this.buildTripCard(trip));
+  }
+
+  async observations(tripId: string) {
+    await this.mustTrip(tripId);
+    return this.store.getObservations(tripId);
+  }
+
+  async profile(driverId: string) {
+    const driver = await this.store.getDriver(driverId);
+    if (!driver) throw new HttpError(404, "driver not found");
+    const profile = normalizeProfile(driver.profile, this.cfg);
+    return {
+      driver_id: driverId,
+      ...profile,
+      notify_threshold: notifyThreshold(profile, this.cfg),
+      default_notify_threshold: this.cfg.tiers.urgent,
+      weight_multipliers: { ...defaultMults(), ...driver.weightOverrides },
+    };
+  }
+
+  private async buildTripCard(trip: TripRow): Promise<ReportCard> {
+    const [windows, observations] = await Promise.all([this.store.getWindows(trip.id), this.store.getObservations(trip.id)]);
+    return buildCard(windows, observations, { kidsInCar: trip.kidsInCar, lowExperience: trip.lowExperience }, this.cfg);
   }
 
   async driverTrips(driverId: string) {
@@ -133,7 +191,8 @@ export class RiskService {
     return Promise.all(
       trips.map(async (t) => {
         const s = summarize(await this.store.getWindows(t.id));
-        return { trip_id: t.id, started_at: t.startedAt, ended_at: t.endedAt, max_score: s.max_score, grade: s.grade };
+        const card = (await this.store.getCard(t.id))?.card;
+        return { trip_id: t.id, started_at: t.startedAt, ended_at: t.endedAt, max_score: s.max_score, grade: s.grade, card_score: card?.score ?? null, card_grade: card?.grade ?? null };
       }),
     );
   }
@@ -144,6 +203,9 @@ export class RiskService {
     return trip;
   }
 }
+
+const SEVERITY: Action[] = ["none", "voice_nudge", "voice_warning", "voice_urgent", "ask_permission_to_notify", "notify_contacts"];
+const mostSevere = (actions: Action[]): Action => actions.reduce((a, b) => (SEVERITY.indexOf(b) > SEVERITY.indexOf(a) ? b : a), "none" as Action);
 
 /** Series, max score, time per tier and letter grade (A: tier 0 only … D: reached tier 3). */
 function summarize(windows: { ts: string; score: number; tier: Tier }[]) {

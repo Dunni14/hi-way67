@@ -32,10 +32,13 @@ window ─> smooth (3) ─> state levels ─> z = Σ w·x (capped ln 50) ─> R 
 | `POST /trips` | Start a trip: `{driver_id, kids_in_car, low_experience, sleep_hours?, sharing_mode?}` -> `{trip_id}` |
 | `POST /trips/{id}/windows` | One signal window every 10 s -> `{score, tier, dominant, actions, levels, override, degraded}` |
 | `POST /trips/{id}/feedback` | `{window_ts, verdict: "false_alarm" \| "confirmed"}`; scales the dominant factor's weight x0.95 / x1.05, clamped 0.5x..1.5x, per driver |
-| `POST /trips/{id}/end` | Close the trip |
+| `POST /trips/{id}/end` | Close the trip; writes the report card once and updates the driver profile -> `{trip_id, ended, card}` |
 | `GET /trips/{id}/state` | Latest response object (for the Photon agent) |
-| `GET /trips/{id}/report` | Series, events, max score, seconds per tier, grade A-D |
-| `GET /drivers/{id}/trips` | Past trips with grades |
+| `GET /trips/{id}/report` | Series, events, max score, seconds per tier, grade A-D (max tier), plus `card` |
+| `GET /trips/{id}/card` | Report card: stored after the trip ended, computed live before |
+| `GET /trips/{id}/observations` | The stored expression label for every window |
+| `GET /drivers/{id}/trips` | Past trips with grades and `card_score` / `card_grade` |
+| `GET /drivers/{id}/profile` | `careIndex`, `scoredTrips`, `learnedShift`, current `notify_threshold`, weight multipliers |
 
 Errors: 400 invalid body, 404 unknown trip or window, 409 ended trip or duplicate `ts`.
 
@@ -46,6 +49,25 @@ Errors: 400 invalid body, 404 unknown trip or window, 409 ended trip or duplicat
 - Cooldown only suppresses the voice action; `tier` and `score` are still returned. `notify_contacts` is limited to once per 10 min per trip.
 - `sharing_mode: "never"` on the driver turns `notify_contacts` into `ask_permission_to_notify`. `sharing_mode` is an optional field on `POST /trips` (the spec has the column but no way to set it).
 - Smoothing applies to numeric signals; booleans and `longest_eye_closure_s` use the newest window so a microsleep isn't averaged away.
+
+## Report card and adaptive notify threshold
+
+Code: `risk/expression.ts`, `risk/card.ts`, `risk/profile.ts`; all numbers are in `weights.json` (`expression`, `report`, `adaptive`). Tests: `risk/report.test.ts` and the last two tests in `risk/api.test.ts`.
+
+**Observations.** Every window also stores one expression label in `observations`: `no_face` > `drowsy` (eye closure, yawns or a long blink) > `stressed` > `distracted` (gaze off road or phone) > `calm` > `neutral`, with an intensity 0..1 and the cues behind it. Labels use raw signals only, so they can be re-derived.
+
+**Final score** (0..100, higher is better, `formula_version` 1), over scored windows (the baseline windows are skipped):
+
+```
+penalty = 0.3*meanRisk + 0.2*p90Risk + 30*tier2Frac + 30*tier3Frac + 10*min(microsleeps, 3)
+score   = clamp(100 - penalty, 0, 100)
+```
+
+`tier2Frac` is the share of windows at tier >= 2 and `tier3Frac` the share at tier 3, so a tier 3 window is charged both. Grade: A >= 90, B >= 80, C >= 65, D >= 50, else F. This is separate from the older `grade` (A-D by highest tier reached), which is kept. Five category scores (attention, speed, smoothness, alertness, composure) use `100 * (1 - (0.5*mean(level) + 0.5*share(level >= 0.6)))`. `confidence` is scored windows / 60, capped at 1; a card under 12 scored windows is `provisional`. The card also carries expression shares, counts, and `features` (a fixed-order vector, names in `feature_names`) for offline learning. It is stored in `report_cards` when the trip first ends.
+
+**Adaptive threshold.** `drivers.profile` holds `careIndex` (starts 75; each non-provisional card moves it toward the trip score by `0.3 * confidence`) and `learnedShift`. The score needed to text a friend is `clamp(85 + 0.5*(careIndex - 75) + learnedShift, 60, 95)`: a careless history lowers it (down to 60, so tier 2 can notify), a careful one raises it (up to 95, so a plain score-driven tier 3 stays voice only). Overrides (microsleep, sustained drowsiness) and the kids-in-car rule still notify regardless; voice tiers and the 10-minute notify cooldown are unchanged. A new driver sits at 85, the old behavior.
+
+**Reinforcement data.** Each window that triggers an action also writes a `bandit_events` row: 8-number context (six levels, kids, low experience), the most severe action, and `scores` (risk score, threshold used). `POST /trips/{id}/feedback` sets its `reward` (+1 confirmed, -1 false alarm); on a notify action it also moves `learnedShift` by +2 (false alarm) or -1 (confirmed), clamped to +/-10. The `bandit_models` table and a LinUCB learner are not implemented. On a restart, replay uses the driver's current threshold.
 
 ## In-process bridge
 

@@ -1,9 +1,12 @@
 // Persistence boundary for the risk engine. Timestamps are ISO strings at this
 // edge; the Postgres implementation converts to/from TIMESTAMPTZ.
+import type { ReportCard } from "../card.ts";
+import type { Observation } from "../expression.ts";
+import type { DriverProfile } from "../profile.ts";
 import type { Baseline } from "../smoothing.ts";
 import type { Action, Evaluation, Override, SharingMode, SignalWindow, Tier, WeightMults } from "../types.ts";
 
-export type DriverRow = { id: string; sharingMode: SharingMode; weightOverrides: Partial<WeightMults> };
+export type DriverRow = { id: string; sharingMode: SharingMode; weightOverrides: Partial<WeightMults>; profile: Partial<DriverProfile> };
 
 export type TripRow = {
   id: string;
@@ -20,11 +23,17 @@ export type WindowRow = { tripId: string; ts: string; raw: SignalWindow; result:
 
 export type EventRow = { tripId: string; ts: string; tier: Tier; actions: Action[]; override: Override | null };
 
+export type CardRow = { tripId: string; driverId: string; createdAt: string; card: ReportCard };
+
+/** One logged decision for later reinforcement learning: 8-number context, action taken, reward once known. */
+export type DecisionRow = { tripId: string; ts: string; tier: Tier; dominant: string; action: Action; context: number[]; scores: Record<string, unknown> };
+
 export interface RiskStore {
   /** Create the driver if missing; returns the stored row. */
   upsertDriver(id: string, sharingMode?: SharingMode): Promise<DriverRow>;
   getDriver(id: string): Promise<DriverRow | null>;
   setWeightOverrides(id: string, overrides: Partial<WeightMults>): Promise<void>;
+  setProfile(id: string, profile: DriverProfile): Promise<void>;
 
   createTrip(t: Omit<TripRow, "endedAt" | "baseline">): Promise<void>;
   getTrip(id: string): Promise<TripRow | null>;
@@ -39,4 +48,14 @@ export interface RiskStore {
 
   addEvent(e: EventRow): Promise<void>;
   getEvents(tripId: string): Promise<EventRow[]>;
+
+  addObservation(o: Observation & { tripId: string }): Promise<void>;
+  getObservations(tripId: string): Promise<Observation[]>; // ascending by ts
+
+  saveCard(c: CardRow): Promise<void>;
+  getCard(tripId: string): Promise<CardRow | null>;
+
+  addDecision(d: DecisionRow): Promise<void>;
+  /** Sets the reward on the decision logged at (trip, ts); returns its action, or null if none. */
+  rewardDecision(tripId: string, ts: string, reward: number): Promise<Action | null>;
 }
