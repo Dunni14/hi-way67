@@ -351,6 +351,6 @@ class TripController(app: Application) : AndroidViewModel(app) {
         const val WINDOW_MS = 10_000L
         const val DEMO_LAT = 42.2808 // Ann Arbor: where the scripted demo drive "is"
         const val DEMO_LON = -83.743
-        const val CALIBRATION_MS = 60_000L // the engine's 6 baseline windows
+        const val CALIBRATION_MS = 20_000L // the engine's 2 baseline windows (backend weights.json baselineWindows)
     }
 }

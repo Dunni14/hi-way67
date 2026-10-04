@@ -58,7 +58,7 @@ Send every 10 seconds: one window of **raw** signals. The phone doesn't score an
 | `events` | array, default `[]` | `yawn` (one per yawn), `nod`, `hard_brake`, `swerve`. `hard_brake` pauses speech for 10 s; `yawn` and `nod` feed the roast text and answers. |
 | `signals` | object | The engine's `SignalWindow` fields, all optional (leave out what you don't know): `face_visible`, `heart_rate`, `breathing_rate`, `engagement`, `eye_closure_frac` (share of the window with eyes closed), `longest_eye_closure_s` (longest continuous closure; ≥ 1.5 s triggers the microsleep override), `yawns`, `emotion_stress`, `gaze_off_road_s`, `phone_in_hand`, `hard_brakes`, `swerves`, `speed_mph`, `speed_limit_mph`. |
 
-The engine counts windows for its baseline (6), hold (2) and sustained-drowsiness rules (3 and 12), and uses `ts` for cooldowns. Demo mode exploits that: it sends windows faster but stamps them in real time, so alerts come sooner while cooldowns stay at 2 real minutes.
+The engine counts windows for its baseline (`baselineWindows`, 2 = 20 s), hold (2) and sustained-drowsiness rules (3 and 12), and uses `ts` for cooldowns. Demo mode exploits that: it sends windows faster but stamps them in real time, so alerts come sooner while cooldowns stay at 2 real minutes.
 
 ### `utterance`
 A speech-to-text result.
@@ -123,7 +123,7 @@ The engine's verdict on one `risk_window` (same `ts`).
 | `override` | Why the tier was forced: `microsleep`, `drowsy_sustained_3`, `drowsy_sustained_12`, `tier2_sustained_12`, or `null` |
 | `degraded` | Face hidden for 3+ windows: scored on speed and motion only |
 | `actions` | What the backend is doing about it: `voice_nudge`, `voice_warning`, `voice_urgent`, `notify_contacts`, `ask_permission_to_notify`, or `none` |
-| `calibrating` | Still inside the engine's 6 baseline windows |
+| `calibrating` | Still inside the engine's baseline windows (2, i.e. 20 s) |
 
 The phone displays it and plays its alarm sound when `actions` contains `voice_urgent`. The backend speaks and notifies on its own.
 

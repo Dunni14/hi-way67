@@ -7,6 +7,12 @@ import { PGlite } from "@electric-sql/pglite";
 import { createRiskRoutes } from "../http/risk.ts";
 import { PgRiskStore } from "./store/pg.ts";
 import { RiskService } from "./service.ts";
+import { riskConfig } from "./config.ts";
+
+// These tests check the engine logic against the 6-window (60 s) baseline they were written for;
+// the live config (weights.json baselineWindows) may calibrate faster.
+const cfg = { ...riskConfig, baselineWindows: 6 };
+const B = cfg.baselineWindows;
 
 const T0 = Date.parse("2026-10-03T20:00:00Z");
 const NEUTRAL = {
@@ -36,7 +42,7 @@ before(async () => {
   store = new PgRiskStore(db);
   await store.migrate();
   await store.migrate(); // idempotent
-  await start(new RiskService(store));
+  await start(new RiskService(store, cfg));
 });
 after(async () => {
   server.close();
@@ -55,7 +61,7 @@ const sendWindow = (trip: string, i: number, o: object = {}) =>
 async function drive(trip: string, scenario: object, n: number, from = 0) {
   let last: any;
   for (let i = from; i < from + n; i++) {
-    last = await sendWindow(trip, i, i < 6 ? { ...scenario, heart_rate: 70, breathing_rate: 15 } : scenario);
+    last = await sendWindow(trip, i, i < B ? { ...scenario, heart_rate: 70, breathing_rate: 15 } : scenario);
   }
   return last;
 }
@@ -90,8 +96,8 @@ test("grade A with neutral driving, D after a microsleep", async () => {
   assert.equal((await call("GET", `/trips/${a}/report`)).body.grade, "A");
 
   const d = await startTrip("carol");
-  await drive(d, {}, 6); // baseline
-  const hit = await sendWindow(d, 6, { longest_eye_closure_s: 2 });
+  await drive(d, {}, B); // baseline
+  const hit = await sendWindow(d, B, { longest_eye_closure_s: 2 });
   assert.equal(hit.body.tier, 3);
   assert.equal(hit.body.override, "microsleep");
   assert.equal((await call("GET", `/trips/${d}/report`)).body.grade, "D");
@@ -140,7 +146,7 @@ test("a restarted service replays stored windows and keeps cooldown state", asyn
   const t = await startTrip("hank");
   await drive(t, AGITATED, 9); // tier-1 voice already fired
   server.close();
-  await start(new RiskService(store)); // fresh in-memory runtime
+  await start(new RiskService(store, cfg)); // fresh in-memory runtime
   const r = await sendWindow(t, 9, AGITATED);
   assert.equal(r.body.tier, 1);
   assert.deepEqual(r.body.actions, ["none"]); // still inside the 120 s cooldown

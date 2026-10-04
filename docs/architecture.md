@@ -44,7 +44,7 @@ All of it is on the backend now; the phone only senses.
 | Responsibility | Owner |
 |---|---|
 | Collect 10 s of raw signals (eye-closure share, longest closure, yawns, vitals, speed, IMU events) | Phone (`WindowAggregator`) |
-| Baseline (6 windows), smoothing, levels, odds-ratio score | Engine (`risk/decision.ts`, `score.ts`, `levels.ts`) |
+| Baseline (2 windows = 20 s, `baselineWindows` in `weights.json`), smoothing, levels, odds-ratio score | Engine (`risk/decision.ts`, `score.ts`, `levels.ts`) |
 | Tier 0–3, 2-window hold, overrides (microsleep, sustained drowsiness, ignored warning), kids-in-car raise | Engine |
 | Cooldowns (voice 2 min per tier, contacts 10 min) | Engine |
 | Which line to say at tier 1/2 | Bandit (`bandit/`) |

@@ -84,7 +84,7 @@ ON CONFLICT (rule_id) DO UPDATE
 -- ---------------------------------------------------------------------
 INSERT INTO settings (key, value, note) VALUES
   ('window_seconds',              '10',    'Length of one signal window'),
-  ('baseline_windows',            '6',     'First 60 s set base_hr and base_br; tier 0 during baseline'),
+  ('baseline_windows',            '2',     'First 20 s set base_hr and base_br; tier 0 during baseline'),
   ('smoothing_windows',           '3',     'Rolling mean applied before scoring'),
   ('z_cap',                       '3.912', 'ln(50). Caps stacked odds ratios'),
   ('tier_hold_windows',           '2',     'Score-based tier must hold this long before firing'),

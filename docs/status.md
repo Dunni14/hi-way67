@@ -15,7 +15,7 @@ The phone app is [`frontend/`](../frontend) (Driver Guardian). It **senses and d
 | Yawn detection | Built | Presage has no yawn output (its face metrics are landmarks, blinking, talking, expressions). `FaceSampler` runs every landmark frame (MediaPipe Face Mesh, confirmed in the SDK) through `YawnDetector`: mouth openness ≥ 0.6 held 1.5 s, ≤ 150 ms jitter tolerated, one per 5 s. Emits the `yawn` event. Threshold to be tuned on device (Debug screen / `adb logcat -s Presage`). |
 | Nod detection | Not started | `nod` event never set. |
 | Longest continuous eye closure | Built | `FaceSampler` tracks closure runs across seconds; sent as `longest_eye_closure_s`, which drives the engine's microsleep override (≥ 1.5 s → urgent check-in, then the alarm if unanswered). A run ends at a frame without a full mesh or a frame gap over 250 ms, so a lost face can't fake a long closure. |
-| 60 s per-trip baseline | Done (backend) | Engine: first 6 windows set baseline heart and breathing rate; tier 0 meanwhile. |
+| 20 s per-trip baseline | Done (backend) | Engine: first 2 windows (`baselineWindows` in `weights.json`) set baseline heart and breathing rate; tier 0 meanwhile. Was 60 s; shortened so calibration doesn't eat the start of a drive. |
 | Smoothing | Done (backend) | Engine: rolling mean over 3 windows before scoring. |
 | Drop low-confidence frames | Built | Phone `WindowAggregator` ignores frames without a valid face; the engine goes `degraded` (speed and motion only) after 3 faceless windows. |
 | Drowsy / reckless / distracted state derivation | Done (backend) | Engine levels: drowsy, agitated, speeding, phone, distracted, erratic. The phone doesn't send gaze or phone-in-hand yet, so distracted and phone stay 0. |

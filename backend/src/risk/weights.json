@@ -54,7 +54,7 @@
     "warning": 70,
     "urgent": 85
   },
-  "baselineWindows": 6,
+  "baselineWindows": 2,
   "smoothingWindows": 3,
   "holdWindows": 2,
   "overrides": {

@@ -99,7 +99,7 @@ Code: `backend/src/bandit/`. Config: `bandit/bandit.json` (alpha, 120 s reward d
 - `GET /drivers/{id}/policy` -> `{driver_id, actions: [{action, updates, mean_reward}]}`. 404 when the bandit is off.
 - Context `x` (d = 8, all 0..1): bias, drowsy, agitated, speeding, trip minutes / 120, night (22:00-05:59 server local time), kids in car, interventions this trip / 5.
 - Reward, 120 s after the intervention: `clamp((mean target before - mean target after) / 0.3, -1, 1)`, +1 if the driver stopped (speed 0 for 60 s) after a drowsy intervention, -0.5 on `false_alarm` feedback, -0.5 if the tier went up; clamped to [-1, 2]. No reward and no update when the trip ended first, the face was hidden for most of the period, or there are no windows to compare.
-- Before/after levels are read from the `windows` table in `DATABASE_URL` (not migrated). The first 6 baseline windows carry no levels and are skipped.
+- Before/after levels are read from the `windows` table in `DATABASE_URL` (not migrated). The baseline windows (`baselineWindows`, 2) carry no levels and are skipped.
 - Model updates are serialized per driver inside the process; two backend instances sharing one database would still need a database-level lock.
 - `family_voice_warning` is only offered when `ELEVENLABS_FAMILY_VOICE_ID` is set (one recorded voice for the app). The orchestrator speaks that action with this voice.
 - Deviations from the spec: the linear algebra is plain TypeScript (this backend has no numpy); `bandit_events` has an extra `false_alarm` column so feedback survives until the reward is computed.

@@ -1,7 +1,10 @@
 // Report card formula, profile adaptation and the notify threshold, in-process (no Postgres).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { riskConfig as cfg } from "./config.ts";
+// These tests check the engine logic against the 6-window (60 s) baseline they were written for;
+// the live config (weights.json baselineWindows) may calibrate faster.
+import { riskConfig } from "./config.ts";
+const cfg = { ...riskConfig, baselineWindows: 6 };
 import { buildCard, letterOf, type CardWindow } from "./card.ts";
 import { observe } from "./expression.ts";
 import { initialState, processWindow } from "./decision.ts";

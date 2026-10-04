@@ -1,7 +1,10 @@
 // Spec §10 test table, against the pure core (no DB).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { riskConfig as cfg } from "./config.ts";
+// These tests check the engine logic against the 6-window (60 s) baseline they were written for;
+// the live config (weights.json baselineWindows) may calibrate faster.
+import { riskConfig } from "./config.ts";
+const cfg = { ...riskConfig, baselineWindows: 6 };
 import { initialState, processWindow, type EngineState } from "./decision.ts";
 import { defaultMults } from "./score.ts";
 import type { Evaluation, SignalWindow, TripContext } from "./types.ts";
@@ -16,18 +19,20 @@ const ctx0: TripContext = { kidsInCar: false, lowExperience: false, sleepHours: 
 
 const win = (i: number, o: Partial<SignalWindow> = {}): SignalWindow => ({ ...NEUTRAL, ts: new Date(T0 + i * 10_000).toISOString(), ...o });
 
-/** 6 baseline windows, then `n` scenario windows. `base` lets a scenario pre-set non-baseline signals so smoothing starts steady. */
+/** B baseline windows, then `n` scenario windows. `base` lets a scenario pre-set non-baseline signals so smoothing starts steady. */
 function run(scenario: Partial<SignalWindow>, n = 8, ctx = ctx0, base: Partial<SignalWindow> = {}) {
   let st: EngineState = initialState();
   const out: Evaluation[] = [];
-  for (let i = 0; i < 6 + n; i++) {
-    const r = processWindow(st, win(i, i < 6 ? { ...scenario, ...base, heart_rate: 70, breathing_rate: 15 } : scenario), ctx, cfg);
+  for (let i = 0; i < B + n; i++) {
+    const r = processWindow(st, win(i, i < B ? { ...scenario, ...base, heart_rate: 70, breathing_rate: 15 } : scenario), ctx, cfg);
     st = r.state;
     out.push(r.evaluation);
   }
   return out;
 }
 const last = (xs: Evaluation[]) => xs[xs.length - 1]!;
+/** Baseline (calibration) windows, from weights.json. */
+const B = cfg.baselineWindows;
 
 const DROWSY = { eye_closure_frac: 0.3, yawns: 3, engagement: 0, breathing_rate: 11 };
 const AGITATED = { emotion_stress: 1, heart_rate: 95 };
@@ -44,7 +49,7 @@ test("all neutral: score 0, tier 0", () => {
 });
 
 test("drowsy only: ~31.2, tier 0 by score; onset -> tier 1 on the 2nd window, sustained -> tier 2 on the 3rd", () => {
-  const out = run(DROWSY, 8, ctx0, { eye_closure_frac: 0.3, yawns: 3, engagement: 0 }).slice(6);
+  const out = run(DROWSY, 8, ctx0, { eye_closure_frac: 0.3, yawns: 3, engagement: 0 }).slice(B);
   assert.ok(Math.abs(last(out).score - 31.2) < 0.1);
   assert.deepEqual(out.slice(0, 3).map((e) => e.tier), [0, 1, 2]);
   assert.equal(out[1]!.override, "drowsy_onset");
@@ -100,7 +105,7 @@ function sequence(windows: Partial<SignalWindow>[], ctx = ctx0) {
     st = r.state;
     out.push(r.evaluation);
   });
-  return out.slice(6);
+  return out.slice(B);
 }
 
 test("a second microsleep within 2 min alarms at once; later it is a check-in again", () => {
@@ -160,11 +165,11 @@ test("agitated + kids: ~67.0, tier 1 raised to 2", () => {
 });
 
 test("same tier twice within 120 s: second has no voice action", () => {
-  const out = run(AGITATED, 8).slice(6);
+  const out = run(AGITATED, 8).slice(B);
   const voice = out.filter((e) => e.actions.some((a) => a.startsWith("voice_")));
   assert.equal(voice.length, 1);
   // after 120 s it may speak again
-  const long = run(AGITATED, 20).slice(6).filter((e) => e.actions.includes("voice_nudge"));
+  const long = run(AGITATED, 20).slice(B).filter((e) => e.actions.includes("voice_nudge"));
   assert.equal(long.length, 2);
 });
 
@@ -196,7 +201,7 @@ test("face hidden for 3 windows: degraded, scores only speed and motion", () => 
 });
 
 test("drowsy >= 0.6 for 12 windows -> tier 3", () => {
-  const out = run(DROWSY, 14, ctx0, { eye_closure_frac: 0.3, yawns: 3, engagement: 0 }).slice(6);
+  const out = run(DROWSY, 14, ctx0, { eye_closure_frac: 0.3, yawns: 3, engagement: 0 }).slice(B);
   assert.equal(out[11]!.tier, 3);
   assert.equal(out[11]!.override, "drowsy_sustained_12");
   assert.ok(out[10]!.tier < 3);
@@ -204,7 +209,7 @@ test("drowsy >= 0.6 for 12 windows -> tier 3", () => {
 
 test("tier 2 held for 12 windows -> tier 3 (kids off)", () => {
   // score ~ mid 70s: agitated + a little speeding
-  const out = run({ ...AGITATED, speed_mph: 75, speed_limit_mph: 70 }, 20).slice(6);
+  const out = run({ ...AGITATED, speed_mph: 75, speed_limit_mph: 70 }, 20).slice(B);
   const idx2 = out.findIndex((e) => e.tier === 2);
   assert.ok(idx2 >= 0, "reaches tier 2");
   const t3 = out.findIndex((e) => e.override === "tier2_sustained_12");
@@ -212,9 +217,9 @@ test("tier 2 held for 12 windows -> tier 3 (kids off)", () => {
 });
 
 test("notify_contacts at most once per 10 min; sharing off asks permission instead", () => {
-  const out = run({ ...AGITATED, ...SPEEDING }, 70).slice(6);
+  const out = run({ ...AGITATED, ...SPEEDING }, 70).slice(B);
   assert.equal(out.filter((e) => e.actions.includes("notify_contacts")).length, 2); // windows 2 and ~62
-  const off = run({ ...AGITATED, ...SPEEDING }, 8, { ...ctx0, sharingOn: false }).slice(6);
+  const off = run({ ...AGITATED, ...SPEEDING }, 8, { ...ctx0, sharingOn: false }).slice(B);
   assert.ok(off.some((e) => e.actions.includes("ask_permission_to_notify")));
   assert.ok(!off.some((e) => e.actions.includes("notify_contacts")));
 });
