@@ -1,60 +1,60 @@
 # Android app
 
-**Status: Not started.** No Android code is in this repository. This page specifies what the app must do so it fits the backend that already exists. The design comes from the [root README](../README.md); the wire format is in [protocol.md](protocol.md).
+**Status: built, compiling, not yet run on a device.** Code is in [`frontend/`](../frontend/). Build and run steps: [frontend/README.md](../frontend/README.md). Rules for whoever works on it: [frontend/frontend.md](../frontend/frontend.md). The wire formats are [protocol.md](protocol.md) (WebSocket) and [risk-engine.md](risk-engine.md) (REST).
 
-Planned stack: native Kotlin, Presage native SDK, Android `SpeechRecognizer`, installed over USB.
+Stack: native Kotlin, Jetpack Compose, CameraX, Presage SmartSpectra SDK, OkHttp, installed over USB.
 
-## Responsibilities
+## What the app does
 
 | # | Responsibility | Status |
 |---|---|---|
-| 1 | Full-screen dashcam view, front camera facing the driver, no touch needed while driving | Not started |
-| 2 | Presage: blinks, eye closure, head pose and nods, expression, HR, HRV, breathing, confidence | Not started |
-| 3 | 60 s baseline at trip start; score signals as deviation from it | Not started |
-| 4 | 10 s rolling average; drop low-confidence frames and mark them missing | Not started |
-| 5 | Feature vector **x** (13 features, each 0..1) every 10 s | Not started |
-| 6 | Drowsy and reckless weight vectors → `r`, multiplier `m` (context × speed), `R = clamp(100·r·m)` | Not started |
-| 7 | Decision tree: tiers 40/70/85, dominant sub-score, 15 s hold, 2 min per-tier cooldown, 70 sustained 2 min → 85 | Not started |
-| 8 | GPS speed and location; IMU hard-brake and swerve detection | Not started |
-| 9 | WebSocket client: `hello` on connect, `risk_window` every 10 s, `alert`, `settings`, `trip_start` / `trip_end` | Not started |
-| 10 | Play `speak.audio` (base64 mp3), or on-device TTS when it is empty | Not started |
-| 11 | Listen for `listenAfterMs` after a `speak`, send `utterance` with the same `context`, then `speak_done` | Not started |
-| 12 | `navigate` → open maps searching "rest stop" | Not started |
-| 13 | `dismissed` → gradient step on **w** toward lower risk for the latest window; show weights on a debug screen | Not started |
-| 14 | Settings: sharing mode, kids in car | Not started |
-| 15 | Pre-trip check screen (stretch) | Not started |
-| 16 | Bundled alarm audio for the alarm stage | Not started |
-| 17 | Report card screen (stretch) | Not started |
+| 1 | Full-screen dashcam view, no touch needed while driving | Done |
+| 2 | Presage: eye closure, blinks, expression, HR, breathing, confidence | Compiles, untested on a face. Fake source for the demo. |
+| 3 | 60 s baseline at trip start; low-confidence frames dropped | Done (phone model). The engine builds its own baseline from its first 6 windows. |
+| 4 | 10 s window of raw signals sent to the risk engine (`POST /trips/{id}/windows`) | Done |
+| 5 | Show the engine's score, tier, dominant factor, override, actions, degraded flag | Done |
+| 6 | Trip lifecycle on the engine: start, end, report, per-driver history | Done |
+| 7 | Feedback buttons: `false_alarm` / `confirmed` after an alert | Done |
+| 8 | Fallback: phone `RiskModel` and `AlertGate` when the engine is off or unreachable | Done |
+| 9 | WebSocket client: `hello`, `risk_window`, `settings`, `trip_start` / `trip_end`, `alert` (fallback only) | Done |
+| 10 | GPS speed; IMU hard-brake and swerve detection | Done, untested on a device |
+| 11 | Bundled alarm on `voice_urgent` (or tier 85 in fallback) | Done, placeholder tone |
+| 12 | `navigate` opens maps; `dismissed` stops the alarm and nudges the local weights | Done |
+| 13 | Settings: sharing mode, kids in car, new driver, hours slept, engine on/off, host, demo mode | Done |
+| 14 | Report card (local) plus the engine's grade, time per tier and events | Done |
+| 15 | History screen | Done |
+| 16 | Play `speak.audio`, listen for replies (voice) | **Excluded.** `speak` is ignored; no mic. |
+| 17 | Pre-trip questionnaire | **Excluded.** Replaced by three plain settings. |
 
-## Feature vector (from the root README)
+## Who scores
 
-```
-x = [ eye_closure, long_blinks, yawns, head_nod, breathing_dev, heart_rate_dev,
-      emotion_stress, hard_brake_count, swerve_count, speed_over_limit,
-      sleep_deficit, hours_driving, night_time ]
-```
+The backend's logistic [risk engine](risk-engine.md) scores the trip: smoothing, levels, `R`, tiers, holds, overrides, cooldowns, the kids raise. The app sends raw signals only.
 
-Send it in `risk_window.features` as a name → value map. The backend stores it and does not read it.
+If `POST /trips` fails (backend without `DATABASE_URL`, unreachable) or the setting is off, the phone scores locally as before and sends `alert` frames. While the engine scores, the phone sends **no** `alert` frame: the backend already speaks for the engine's alert, so the phone's would double it.
 
-## Events the backend uses
+## Signals sent per window
 
-Put these in `risk_window.events` for the window in which they happened:
+`ts`, `face_visible`, `heart_rate`, `breathing_rate`, `engagement`, `eye_closure_frac`, `longest_eye_closure_s`, `yawns`, `emotion_stress`, `gaze_off_road_s`, `hard_brakes`, `swerves`, `speed_mph`, `speed_limit_mph`. A signal that was not measured is omitted (null), not 0. `phone_in_hand` is never sent: there is no detector. `ts` is ISO 8601 and unique per trip.
 
-- `yawn`, `nod`: roast call text ("yawned 3 times in 4 minutes") and the yawn count in answers
+## Events the backend uses (WebSocket `risk_window.events`)
+
+- `yawn`, `nod`: roast text ("yawned 3 times in 4 minutes") and yawn counts in answers
 - `hard_brake`: pauses driver speech for 10 s
 - `swerve`: stored only
 
-## What the backend already handles
+## What the backend handles
 
-The phone does **not** need to implement any of these:
+The app does not implement any of these:
 
-- Kids-in-car tier bump (70 → 85)
-- Choosing and synthesizing what to say
+- Which voice line to say and how (ElevenLabs), and playing it back to the driver
+- Kids-in-car tier raise for engine trips; mapping engine actions to voice and iMessage
 - Group chat, guardian alerts, roast, permission prompt when sharing is off
 - Parsing "I'm fine", yes/no, and "tell her …"
+- Per-driver weight changes from feedback, trip storage, report and grading
 
-## Open protocol gaps
+## Open gaps
 
-- No `distracted` sub-score or gaze event, though the README defines a distracted state.
-- No fields for pre-trip answers (rest, sleep, medication, experience). They would only feed the phone-side score, so they may not need to be sent.
-- No message to report a weight change back to the backend for logging.
+- No `distracted` sub-score or gaze event in the WebSocket protocol. The engine's `distracted` level needs `gaze_off_road_s`, which the Presage SDK does not give.
+- `phone_in_hand` has no source. The speed limit is a fixed 65 mph.
+- Failed `end` and `report` calls are not retried.
+- Not run on a device or against a live backend; only compiled and unit tested.

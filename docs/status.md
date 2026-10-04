@@ -1,37 +1,37 @@
 # Implementation status
 
-Every feature from the [root README](../README.md), checked against the code on 2026-10-03.
+Every feature from the [root README](../README.md), checked against the code on 2026-10-04.
 
 **Legend:** **Done**: implemented and wired end to end on the backend · **Partial**: some of it exists · **Stub**: an interface or placeholder exists, no real implementation · **Not started**: no code in the repo.
 
-The Android app is not in the repository. Any feature that lives on the phone is **Not started**, even where the backend is ready to receive its output.
+The Android app is in [`frontend/`](../frontend/) (see [phone-app.md](phone-app.md)). It compiles and its JVM tests pass, but it has **not been run on a device or against a live backend**, so phone-side rows are **Partial** at best. Presage on a real face is untested.
 
 ## 1. Driver sensing (Presage)
 
 | Feature | Status | Notes |
 |---|---|---|
-| Presage SDK on device (eyes, head pose, expression, HR, HRV, breathing) | Not started | Phone-side. No Android code in repo. |
-| 60 s per-trip baseline | Not started | Phone-side. |
-| 10 s rolling-average smoothing | Not started | Phone-side. |
-| Drop low-confidence frames | Not started | Phone-side. |
-| Drowsy / reckless / distracted state derivation | Not started | Phone-side. The protocol has no `distracted` sub-score or event yet. Only `drowsy` and `reckless` exist. |
+| Presage SDK on device (eyes, head pose, expression, HR, HRV, breathing) | Partial | `SmartSpectraPresageSource` compiles, untested on a face. Gives pulse, breathing, blinks, expression; yawn, nod and gaze are not provided. A scripted fake source drives the demo. |
+| 60 s per-trip baseline | Done (phone) | `Baseline` in `core`. The engine also builds its own from its first 6 windows. |
+| 10 s rolling-average smoothing | Done (phone) | `SignalSmoother`. The engine smooths again over 3 windows. |
+| Drop low-confidence frames | Done (phone) | Signals stay missing (null), never 0. |
+| Drowsy / reckless / distracted state derivation | Done (backend engine) | The app sends raw signals and the engine derives the levels (drowsy, agitated, speeding, phone, distracted, erratic). The WebSocket protocol still has no `distracted` field. `phone_in_hand` has no source. |
 
 ## 2. Pre-trip check (stretch)
 
 | Feature | Status | Notes |
 |---|---|---|
-| Rested 1–5, hours slept, medication, experience | Not started | No fields for these in the protocol. |
-| Kids in the car toggle | Done (backend) | Sent in `hello` / `settings`. Used for the 70 → 85 tier bump. |
+| Rested 1–5, hours slept, medication, experience | Partial | No questionnaire (excluded). Settings hold "new driver" and optional hours slept, sent in `POST /trips` as `low_experience` and `sleep_hours`. No rested or medication input. |
+| Kids in the car toggle | Done | Settings toggle. Sent in `hello` / `settings` (legacy 70 → 85 bump) and in `POST /trips` (engine raise). |
 
 ## 3. Risk score
 
 | Feature | Status | Notes |
 |---|---|---|
-| Feature vector **x**, two weight vectors, base risk `r = w · x` | Not started | Phone-side. The backend receives the final `R`, `drowsy`, `reckless` and stores the optional `features` map without reading it. |
-| Context/speed multiplier `m` | Not started | Phone-side. The backend applies kids-in-car only as a tier bump (see §4), not as a multiplier. |
-| Server-side logistic risk engine (REST + Postgres) | Done (backend) | Odds-ratio weights, baseline, overrides, cooldowns, feedback, report. See [risk-engine.md](risk-engine.md). The phone must call it; the legacy phone-computed path still works. |
-| Hand-set weights | Not started | Phone-side (legacy path). The engine's weights live in `backend/src/risk/weights.json`. |
-| "I'm fine" gradient step on **w** | Partial | Backend recognizes the phrase and sends `{"type":"dismissed"}`. Applying the nudge and showing weights on a debug screen is phone work and not started. |
+| Feature vector **x**, two weight vectors, base risk `r = w · x` | Done (phone, fallback) | `RiskModel` in `core`. Used only when the engine is off or unreachable. The backend stores the legacy `features` map without reading it. |
+| Context/speed multiplier `m` | Done (phone, fallback) | `RiskModel.multiplier`. The engine has its own context multiplier. |
+| Server-side logistic risk engine (REST + Postgres) | Done (backend and app) | Odds-ratio weights, baseline, overrides, cooldowns, feedback, report. See [risk-engine.md](risk-engine.md). The app calls it for trips, windows, feedback, report and history; not yet exercised against a live backend. |
+| Hand-set weights | Done (phone, fallback) | `WeightStore.defaults`. The engine's weights live in `backend/src/risk/weights.json`. |
+| "I'm fine" gradient step on **w** | Done | Backend sends `dismissed`; the app nudges the phone model and the debug screen shows the weights. Engine trips also use the False alarm / Confirmed buttons (`POST /trips/{id}/feedback`, per-driver x0.5 to x1.5). |
 | Ridge regression fitting | Not started | Roadmap in the README too. |
 
 ## 4. Decision tree
@@ -40,17 +40,17 @@ The tree is split between phone and backend. See [architecture.md](architecture.
 
 | Rule | Status | Where |
 |---|---|---|
-| Tier thresholds 40 / 70 / 85, drowsy vs reckless dominance | Not started | Phone decides and sends `alert`. |
-| 15 s hold before firing | Not started | Phone. |
-| 2 min cooldown per tier | Not started | Phone. The backend has **no** cooldown of its own; every `alert` it receives is acted on. |
-| "70+ sustained for 2 minutes" escalates to 85 | Not started | Phone. |
+| Tier thresholds 40 / 70 / 85, drowsy vs reckless dominance | Done | Engine tiers 1 to 3 when the engine scores; phone `AlertGate` sends `alert` as the fallback. |
+| 15 s hold before firing | Done | Engine: 2-window hold. Phone fallback: 15 s. |
+| 2 min cooldown per tier | Done | Engine has cooldowns (voice only). Phone fallback has a 2 min cooldown per tier. The legacy `alert` path on the backend still has none, so the phone never sends `alert` while the engine scores. |
+| "70+ sustained for 2 minutes" escalates to 85 | Done | Engine override `tier2_sustained_12`; phone gate in fallback. |
 | R < 40: log only | Done | Every `risk_window` is stored; no action. |
 | 40 / 70: voice only, never the group chat | Done | `orchestrator.ts` `onAlert`. |
 | Kids in car: 70 treated as 85 | Done | `orchestrator.ts` `onAlert`. |
 | 85, sharing on: voice + guardian alert + roast (drowsy only) | Done | `escalate()`. Reckless 85 alerts guardians but does not start a roast. |
 | 85, sharing off: ask driver by voice for permission | Done | `permissionLine()` then a 5 s listen. |
 | "I'm fine" dismiss | Done (backend) | See §3 for the weight nudge. |
-| Loud bundled alarm audio file at the alarm stage | Not started | No audio asset; 85 uses the urgent TTS voice settings instead. |
+| Loud bundled alarm audio file at the alarm stage | Partial | App plays a bundled placeholder tone on `voice_urgent` (or tier 85 in fallback). Needs a real alarm file. The backend still uses the urgent TTS voice settings. |
 
 ## 5. Voice (ElevenLabs)
 
@@ -58,14 +58,14 @@ The tree is split between phone and backend. See [architecture.md](architecture.
 |---|---|---|
 | ElevenLabs key only on backend | Done | `voice/elevenlabs.ts`. |
 | Tiered delivery (same voice, different settings) | Done | Four settings presets for 0 / 40 / 70 / 85. |
-| Check-in → "yes" opens navigation | Done (backend) | Sends `{"type":"navigate","query":"rest stop"}`. Opening maps is phone work, not started. |
-| "I'm fine" logs dismissal and backs off | Partial | Backend acks by voice and sends `dismissed`. "Backs off" depends on the phone's cooldown, not started. |
+| Check-in → "yes" opens navigation | Done (backend) | Sends `{"type":"navigate","query":"rest stop"}`. The app opens maps. |
+| "I'm fine" logs dismissal and backs off | Partial | Backend acks by voice and sends `dismissed`. "Backs off" depends on the engine's or phone's cooldown. |
 | Reads family messages, one line | Done | Messages over 120 characters are shortened by LLM. URLs become "a link". |
 | Photos, videos, files, links described | Done | "Mom sent a photo." etc. |
-| Listen 5 s after a message, relay reply | Done (backend) | Backend sets `listenAfterMs: 5000` and handles the `utterance`. Speech recognition on the phone is not started. |
+| Listen 5 s after a message, relay reply | Done (backend) | Backend sets `listenAfterMs: 5000` and handles the `utterance`. Speech recognition on the phone is excluded from the app. |
 | Roasts go through immediately at high drowsiness | Done | Roasts are enqueued as priority. |
 | Family messages go through immediately at high drowsiness | Not started | Normal family messages are always queued in order, regardless of risk. |
-| Full-screen hands-free dashcam UI | Not started | Phone. |
+| Full-screen hands-free dashcam UI | Done | Compose dashcam; controls disabled above 3 mph. Untested on a device. |
 
 ## 6. Photon iMessage agent
 
@@ -91,15 +91,15 @@ The tree is split between phone and backend. See [architecture.md](architecture.
 | Feature | Status | Notes |
 |---|---|---|
 | Every 10 s window persisted | Stub | `InMemoryTripStore` holds windows in an array. No Tiger Data / Timescale client, no schema, no connection string. `index.ts` carries a `TODO(tiger-data)`. |
-| Report card: line chart, letter grade, advice | Not started | |
-| Weekly trends | Not started | |
+| Report card: line chart, letter grade, advice | Done (app) | Local card (chart, grade, advice) plus the engine's grade A to D, time per tier and events from `GET /trips/{id}/report`. Needs Postgres on the backend for the engine part. |
+| Weekly trends | Partial | History screen lists past trips with grades (`GET /drivers/{id}/trips`). No weekly aggregation. |
 
 ## 8. Surroundings (stretch)
 
 | Feature | Status | Notes |
 |---|---|---|
-| GPS speed | Not started (phone) | Backend accepts `speed` and `lat`/`lon` and uses them in answers, roast text and maps links. |
-| Speed vs. fixed demo limit | Not started | |
+| GPS speed | Done (app, untested on device) | Backend accepts `speed` and `lat`/`lon` and uses them in answers, roast text and maps links. |
+| Speed vs. fixed demo limit | Done | Fixed 65 mph constant, sent as `speed_limit_mph`. |
 | Open-Meteo weather | Not started | |
 | Night-time driving | Partial | Backend uses 22:00–05:00 for the late-night trip note only. Not a risk feature. |
 | `surroundings_risk` feature | Not started | |
