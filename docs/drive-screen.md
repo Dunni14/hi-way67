@@ -65,9 +65,27 @@ cd android && BACKEND_URL=http://127.0.0.1:8799 ./gradlew :app:testDebugUnitTest
 
 It replays the synthetic `drive.gpx` through the real session and client: trip created, 50+ windows scored, the backend ends the trip after the long stop, nothing is posted afterwards.
 
+## Presage
+
+The Presage SmartSpectra SDK runs inside the Drive screen: front camera into a small preview (bottom right of the map box, with a hint pill for "face not visible" or errors), metrics into every window. `PresageSource.kt` wraps the SDK; `PresageAggregator.kt` holds every mapping rule and is plain-JVM tested. It runs only while the screen is visible (released in `onStop`), never in `--ez demo true`, and needs `PRESAGE_API_KEY` in `local.properties` and the camera permission (asked together with location). The SDK is a process singleton, so `MainActivity` and the Drive screen cannot both use the camera at once; the second to start would fight the first.
+
+What goes into each 10 s window (backend field names):
+
+| Field | From the SDK | Rule |
+|---|---|---|
+| `face_visible` | validation status OK and metrics seen in the last 5 s | false otherwise, and no other Presage field is sent |
+| `heart_rate` | latest `cardio.pulseRate` | dropped under confidence 0.5, stale after 20 s |
+| `breathing_rate` | latest `breathing.rate` | same |
+| `eye_closure_frac` | share of `face.blinking` samples with `detected` in the window | absent when no new samples |
+| `emotion_stress` | latest `face.expression`: ANGRY + FEAR + DISGUST + SAD, clamped to 1 | hand-set |
+
+Not derivable from the SDK, so left out (the engine reads that as "no evidence"): `yawns`, `engagement`, `gaze_off_road_s`, `phone_in_hand`, `hard_brakes`, `swerves` (GPS acceleration covers erratic driving).
+
+**`longest_eye_closure_s` is deliberately not sent** (`SEND_LONGEST_CLOSURE = false`). It drives the backend's microsleep override: tier 3 and a text to guardians. The SDK documents neither the timestamp unit of its blink samples nor whether `detected` means "eyes closed" or "a blink event", so a wrong mapping could page a family. Turn it on only after logging `face.blinking` on a device with eyes open, a normal blink and eyes held shut. The same doubt applies to `eye_closure_frac`, which at worst adds a moderate drowsy level; check it in the same session. The 0.5 confidence cutoff and the stress mapping are hand-set.
+
 ## Not done
 
-- **Presage is not in the windows.** The Drive screen does not own the camera (Presage runs in `MainActivity`), so windows carry GPS only and the face boxes read as "no evidence" (Attention, Distraction and Eye Tracking stay GREAT). `SignalSource` in `WindowPayload.kt` is the seam: give `DriveViewModel.startSession` a source that returns the backend's `SignalWindow` field names and they go into each window.
+- **Presage covers only part of the signals** (see [Presage](#presage)): no yawns, engagement, gaze or phone-in-hand, so Attention and Distraction stay GREAT ("no evidence"), and the microsleep input is off until it is checked on a device.
 - **No retry queue.** A window that fails to post is lost; the next one goes out normally.
 - **Speech box** is a fixed neutral level: the ElevenLabs agent state is not exposed to the phone.
 - **Route line** has no Directions call or destination picker.

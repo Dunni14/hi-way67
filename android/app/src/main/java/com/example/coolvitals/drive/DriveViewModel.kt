@@ -34,6 +34,17 @@ class DriveViewModel : ViewModel() {
     private var demo = false
     private var session: DriveSession? = null
 
+    /** Presage metrics for the current window. The activity's [PresageSource] feeds it; it holds no Android objects. */
+    val presage = PresageAggregator()
+    @Volatile private var presageActive = false
+
+    /** Turn the Presage fields on once the camera is running, off when it stops: no stale face data in a window. */
+    fun setPresageActive(active: Boolean) {
+        presageActive = active
+    }
+
+    private val presageSignals = SignalSource { if (presageActive) presage.snapshot() else emptyMap() }
+
     private val _state = MutableStateFlow(build())
     val state: StateFlow<DriveUiState> = _state.asStateFlow()
 
@@ -76,7 +87,7 @@ class DriveViewModel : ViewModel() {
      * Starts posting windows to [backend]. Idempotent, and a no-op in demo mode. Call once location permission
      * is granted; the session keeps running across rotations and ends with the ViewModel.
      */
-    fun startSession(backend: Backend, driverId: String, shareLocation: Boolean, signals: SignalSource = NoSignals) {
+    fun startSession(backend: Backend, driverId: String, shareLocation: Boolean, signals: SignalSource = presageSignals) {
         if (session != null || demo) return
         session = DriveSession(
             backend = backend,

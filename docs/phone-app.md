@@ -9,7 +9,7 @@ Planned stack: native Kotlin, Presage native SDK, Android `SpeechRecognizer`, in
 | # | Responsibility | Status |
 |---|---|---|
 | 1 | Full-screen dashcam view, front camera facing the driver, no touch needed while driving | Not started |
-| 2 | Presage: blinks, eye closure, head pose and nods, expression, HR, HRV, breathing, confidence | Not started |
+| 2 | Presage: blinks, eye closure, head pose and nods, expression, HR, HRV, breathing, confidence | Partial. HR, breathing, a blink-based eye closure share, stress from expression and face visibility go into each Drive screen window; see [drive-screen.md](drive-screen.md#presage). No yawns, nods, gaze or microsleep yet |
 | 3 | 60 s baseline at trip start; score signals as deviation from it | Not started |
 | 4 | 10 s rolling average; drop low-confidence frames and mark them missing | Not started |
 | 5 | Feature vector **x** (13 features, each 0..1) every 10 s | Not started |

@@ -53,8 +53,11 @@ class DriveActivity : AppCompatActivity() {
             map.interactive = value
         }
 
-    private val requestLocation = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
-        onPermission(grants.values.any { it })
+    private var presage: PresageSource? = null
+
+    private val requestPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        onPermission(hasLocationPermission())
+        startPresage()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -77,7 +80,12 @@ class DriveActivity : AppCompatActivity() {
         if (intent.getBooleanExtra(EXTRA_DEMO, false)) vm.demo()
         if (granted) startSession()
         showMap(granted)
-        if (!granted) requestLocation.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+        val missing = listOfNotNull(
+            Manifest.permission.ACCESS_FINE_LOCATION.takeIf { !granted },
+            Manifest.permission.ACCESS_COARSE_LOCATION.takeIf { !granted },
+            Manifest.permission.CAMERA.takeIf { presageEnabled() && !hasCameraPermission() },
+        )
+        if (missing.isNotEmpty() && !intent.getBooleanExtra(EXTRA_DEMO, false)) requestPermissions.launch(missing.toTypedArray())
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -96,18 +104,52 @@ class DriveActivity : AppCompatActivity() {
         super.onStart()
         vm.setActive(true)
         if (hasLocationPermission()) location.start()
+        startPresage()
     }
 
     override fun onStop() {
         vm.setActive(false)
         location.stop()
+        stopPresage()
         super.onStop()
     }
 
-    /** Posts a window to the backend every 10 s (GPS only until Presage is merged in). No-op in demo mode. */
+    /** Presage needs its API key, the camera permission, and not be in demo mode. */
+    private fun presageEnabled() = BuildConfig.PRESAGE_API_KEY.isNotBlank() && !intent.getBooleanExtra(EXTRA_DEMO, false)
+
+    /**
+     * Front camera + Presage into the small preview. The camera is held only while this screen is visible
+     * (released in onStop), and never in demo mode, so `MainActivity` can have it when this one does not.
+     */
+    private fun startPresage() {
+        if (!presageEnabled() || !hasCameraPermission() || presage != null) return
+        val preview = findViewById<androidx.camera.view.PreviewView>(R.id.presagePreview)
+        val hint = findViewById<TextView>(R.id.presageHint)
+        preview.visibility = View.VISIBLE
+        presage = PresageSource(this, this, preview, vm.presage, BuildConfig.PRESAGE_API_KEY) { msg ->
+            hint.text = msg ?: ""
+            hint.visibility = if (msg == null) View.GONE else View.VISIBLE
+        }.also {
+            vm.setPresageActive(true)
+            it.start()
+        }
+    }
+
+    private fun stopPresage() {
+        presage?.stop()
+        presage = null
+        vm.setPresageActive(false)
+        findViewById<View>(R.id.presagePreview).visibility = View.GONE
+        findViewById<View>(R.id.presageHint).visibility = View.GONE
+    }
+
+    /** Posts a window to the backend every 10 s: GPS plus Presage fields while the camera runs. No-op in demo mode. */
     private fun startSession() {
         vm.startSession(HttpBackend(BuildConfig.BACKEND_URL), BuildConfig.DRIVER_ID, BuildConfig.SHARE_LOCATION)
     }
+
+    private fun hasCameraPermission() =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
 
     private fun hasLocationPermission() =
         ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED

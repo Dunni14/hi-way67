@@ -176,6 +176,29 @@
             android:layout_height="match_parent"
             android:padding="12dp">
 
+            <androidx.camera.view.PreviewView
+                android:id="@+id/presagePreview"
+                android:layout_width="72dp"
+                android:layout_height="96dp"
+                android:layout_gravity="bottom|end"
+                android:background="@color/drive_card"
+                android:visibility="gone"
+                app:implementationMode="compatible"
+                app:scaleType="fillCenter" />
+
+            <TextView
+                android:id="@+id/presageHint"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom|start"
+                android:background="@drawable/drive_pill_bg"
+                android:maxWidth="200dp"
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="4dp"
+                android:textColor="@color/drive_label"
+                android:textSize="12sp"
+                android:visibility="gone" />
+
             <TextView
                 android:id="@+id/alertBanner"
                 android:layout_width="match_parent"
