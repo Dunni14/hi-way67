@@ -23,6 +23,7 @@ The phone can either send its own `R` / `alert` frames (legacy path) or call the
 - `NO_SPECTRUM=1 npm run dev`: phone side only, no iMessage.
 - `npm run fake-phone` runs the scripted demo. Add `-- -i` for interactive mode (`win`, `alert`, `say`, …; see `../docs/backend.md`).
 - `npm run smoke:tts`: writes one mp3 per voice tier to `out/`.
+- `TIGER_DATABASE_URL=… npm run smoke:tiger`: end-to-end check against a real Tiger Data instance (creates tables, runs one throwaway trip through the engine and bandit, deletes its rows). See `.env.example` for the TLS note.
 - `npm run typecheck`: run this after every change.
 - `npm test`: risk engine unit and HTTP tests (in-process Postgres via PGlite, no server needed).
 
