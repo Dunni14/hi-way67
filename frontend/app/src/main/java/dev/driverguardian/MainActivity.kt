@@ -11,10 +11,14 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -29,7 +33,9 @@ import dev.driverguardian.net.Conn
 import dev.driverguardian.trip.TripController
 import dev.driverguardian.ui.DashcamScreen
 import dev.driverguardian.ui.DriverGuardianColors
+import dev.driverguardian.ui.DriverGuardianTypography
 import dev.driverguardian.ui.ContactsScreen
+import dev.driverguardian.ui.ScreenBg
 import dev.driverguardian.ui.TabBar
 import dev.driverguardian.ui.LocalTripHistoryScreen
 import dev.driverguardian.ui.StatsDashboard
@@ -45,6 +51,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        // Draw behind the camera cutout so the top of the screen is the app's background, not a black strip.
+        window.attributes = window.attributes.apply {
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
         WindowInsetsControllerCompat(window, window.decorView).apply {
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             hide(WindowInsetsCompat.Type.systemBars())
@@ -52,7 +62,7 @@ class MainActivity : ComponentActivity() {
         vm.onNavigate = { q ->
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=" + Uri.encode(q))).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
-        setContent { MaterialTheme(colorScheme = DriverGuardianColors) { Root() } }
+        setContent { MaterialTheme(colorScheme = DriverGuardianColors, typography = DriverGuardianTypography) { Root() } }
     }
 
     @Composable
@@ -92,7 +102,8 @@ class MainActivity : ComponentActivity() {
         // Leaving the parked state always brings the driver back to the Drive tab.
         LaunchedEffect(parked) { if (!parked) { tab = "drive"; showDebug = false } }
 
-        Column(Modifier.fillMaxSize()) {
+        // The background fills the cutout area; the content starts below it.
+        Column(Modifier.fillMaxSize().background(ScreenBg).windowInsetsPadding(WindowInsets.displayCutout)) {
             Box(Modifier.weight(1f)) {
                 when (tab) {
                     // The report card of the trip that just ended (with what the backend shared, once it arrives); Done drops back to Stats.

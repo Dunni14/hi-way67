@@ -30,6 +30,7 @@ The phone senses and displays; the backend's risk engine (`src/risk`) scores eve
 | `speak` | `id`, `text`, `tier`, `audio` (base64 mp3, may be `""`), `listenAfterMs`, `context` | play `audio` (or on-device TTS of `text` if empty); if `listenAfterMs > 0`, listen that long and send an `utterance` with the same `context`; then send `speak_done` |
 | `report` | `score`, `grade`, `summary`, `avg_speed_mph`, `top_speed_mph`, `attention_score`, `duration_s`, `distance_mi`, `image` (base64 PNG, may be `""`) | once, after `trip_end`, if the engine scored the trip: show the report the backend generated for friends and family |
 | `navigate` | `query` | open maps for "rest stop" |
+| `demo_speed` | `mph` | demo control: while in demo mode, report this speed from now on; ignore it otherwise |
 | `dismissed` | `factor?`, `multiplier?` | driver said "I'm fine": stop the alarm; the engine eased that factor's weight for this driver |
 | `contacts` | `list[]` of `{handle, name, role, platform}`, `groupBound`, `groupLink` (or `null`) | show the allowlist; "Create group" opens `groupLink` |
 | `contact_invite` | `name`, `code`, `link` (`https://t.me/<bot>?start=<code>`) | share `link` with the contact; single use, 15 min |
@@ -39,3 +40,7 @@ The phone senses and displays; the backend's risk engine (`src/risk`) scores eve
 | `error` | `message` | log it |
 
 The backend decides tiers (holds, overrides such as microsleep, cooldowns, kids in car), speaks, notifies contacts and runs the roast. The phone only reports raw signals.
+
+## Demo speed slider
+
+Open `http://<backend-host>:8787/demo` in a browser on any laptop that can reach the backend. Moving the slider sends `POST /demo/speed {"mph": 0..120}`, which the backend passes to the phone as `demo_speed`. A phone that connects later gets the current value after its `hello`. `GET /demo/state` returns `{mph, phoneConnected}`. There is no login; it only affects a phone in demo mode.

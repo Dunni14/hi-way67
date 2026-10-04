@@ -145,6 +145,9 @@ export type BackendMsg =
       distance_mi: number;
       image: string; // base64 PNG of the report card ("" if rendering failed)
     }
+  // Demo control (the slider page at GET /demo): the speed a phone in demo mode reports from now on.
+  // Phones not in demo mode ignore it.
+  | { type: "demo_speed"; mph: number }
   // Sound poll winner: play the bundled res/raw/<id> sound now. No reply needed.
   | { type: "play_sound"; id: string } // a sound id from src/agent/sounds.json
   // No answer to the urgent check-in after a first microsleep: sound the alarm now.

@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AutoAI demo speed</title>
+<style>
+  :root { --main: #366DE1; --good: #30A54D; --bad: #F35C5C; --text: #495675; --ink: #1D1B20; --card: #FFFFFF; --bg: #EEF5FE; --line: #D9E4F5; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--ink); font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { width: min(560px, calc(100vw - 32px)); background: var(--card); border-radius: 20px; padding: 28px; box-shadow: 0 8px 30px rgba(54, 109, 225, .12); }
+  h1 { margin: 0; font-size: 20px; font-weight: 500; }
+  .sub { margin: 4px 0 20px; color: var(--text); font-size: 13px; }
+  .readout { display: flex; align-items: baseline; gap: 10px; }
+  #mph { font-size: 96px; font-weight: 600; line-height: 1; color: var(--good); font-variant-numeric: tabular-nums; min-width: 2.2ch; }
+  #mph.over { color: var(--bad); }
+  .unit { color: var(--text); font-size: 20px; }
+  .limit { margin-left: auto; text-align: center; color: var(--text); background: var(--bg); border-radius: 16px; padding: 10px 16px; font-size: 12px; }
+  .limit b { display: block; font-size: 28px; font-weight: 500; }
+  input[type=range] { width: 100%; margin: 26px 0 6px; accent-color: var(--main); height: 32px; }
+  .scale { display: flex; justify-content: space-between; color: var(--text); font-size: 12px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  button { flex: 1 1 60px; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 14px; padding: 12px 0; font: inherit; font-weight: 500; cursor: pointer; }
+  button:hover { background: var(--bg); }
+  button.step { flex: 0 0 64px; background: var(--main); border-color: var(--main); color: #fff; font-size: 20px; }
+  #status { margin-top: 20px; padding: 10px 14px; border-radius: 14px; background: var(--bg); color: var(--text); font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #B0B8C8; flex: none; }
+  .dot.ok { background: var(--good); } .dot.err { background: var(--bad); }
+  kbd { border: 1px solid var(--line); border-radius: 6px; padding: 0 5px; font: inherit; font-size: 12px; }
+  .keys { margin-top: 12px; color: var(--text); font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Demo speed</h1>
+  <p class="sub">Sets the speed the phone reports while it is in demo mode.</p>
+
+  <div class="readout">
+    <span id="mph">65</span><span class="unit">mph</span>
+    <div class="limit"><b id="limit">65</b>speed limit</div>
+  </div>
+
+  <input id="slider" type="range" min="0" max="120" step="1" value="65" aria-label="Speed in miles per hour">
+  <div class="scale"><span>0</span><span>30</span><span>60</span><span>90</span><span>120</span></div>
+
+  <div class="row">
+    <button class="step" data-step="-5" aria-label="5 slower">−</button>
+    <button data-set="0">Stop</button>
+    <button data-set="35">35</button>
+    <button data-set="65">65</button>
+    <button data-set="80">80</button>
+    <button data-set="95">95</button>
+    <button class="step" data-step="5" aria-label="5 faster">+</button>
+  </div>
+
+  <div id="status"><span class="dot" id="dot"></span><span id="msg">Connecting…</span></div>
+  <p class="keys"><kbd>←</kbd> <kbd>→</kbd> change by 1 · <kbd>↓</kbd> <kbd>↑</kbd> change by 5 · <kbd>0</kbd> stop</p>
+</main>
+
+<script>
+  const LIMIT = 65; // the app's fixed demo speed limit
+  const slider = document.getElementById("slider"), mphEl = document.getElementById("mph");
+  const dot = document.getElementById("dot"), msg = document.getElementById("msg");
+  document.getElementById("limit").textContent = LIMIT;
+
+  function show(mph) {
+    slider.value = mph;
+    mphEl.textContent = mph;
+    mphEl.classList.toggle("over", mph > LIMIT);
+  }
+  function status(kind, text) { dot.className = "dot " + kind; msg.textContent = text; }
+  function describe(s) {
+    if (!s.phoneConnected) return ["err", "No phone connected to this backend. The speed is kept and applied when one connects."];
+    return ["ok", "Phone connected. It applies the speed only while demo mode is on."];
+  }
+
+  // Send the newest value; if the slider moved again while a request was in flight, send once more.
+  let sending = false, queued = null;
+  async function send(mph) {
+    if (sending) { queued = mph; return; }
+    sending = true;
+    try {
+      const r = await fetch("/demo/speed", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mph }) });
+      if (!r.ok) throw new Error("backend answered " + r.status);
+      status(...describe(await r.json()));
+    } catch (e) {
+      status("err", "Can't reach the backend: " + e.message);
+    } finally {
+      sending = false;
+      if (queued !== null) { const next = queued; queued = null; send(next); }
+    }
+  }
+  function set(mph) {
+    mph = Math.max(0, Math.min(120, Math.round(mph)));
+    show(mph);
+    send(mph);
+  }
+
+  slider.addEventListener("input", () => set(+slider.value));
+  document.querySelectorAll("button[data-set]").forEach((b) => b.addEventListener("click", () => set(+b.dataset.set)));
+  document.querySelectorAll("button[data-step]").forEach((b) => b.addEventListener("click", () => set(+slider.value + +b.dataset.step)));
+  document.addEventListener("keydown", (e) => {
+    if (e.target === slider) return; // the slider handles its own arrow keys
+    const step = { ArrowRight: 1, ArrowLeft: -1, ArrowUp: 5, ArrowDown: -5 }[e.key];
+    if (step) { e.preventDefault(); set(+slider.value + step); }
+    else if (e.key === "0") set(0);
+  });
+
+  // Start from whatever the backend last sent, and keep the connection line fresh.
+  async function refresh(first) {
+    try {
+      const s = await (await fetch("/demo/state")).json();
+      if (first && typeof s.mph === "number") show(s.mph);
+      status(...describe(s));
+    } catch (e) {
+      status("err", "Can't reach the backend: " + e.message);
+    }
+  }
+  refresh(true);
+  setInterval(() => refresh(false), 3000);
+</script>
+</body>
+</html>

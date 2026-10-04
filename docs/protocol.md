@@ -170,6 +170,13 @@ The phone should:
 ```
 Open the maps app searching for `query`.
 
+### `demo_speed`
+Demo control. Sent when someone moves the slider on the backend's `/demo` page, and once after `hello` if the slider has been used.
+```json
+{ "type": "demo_speed", "mph": 82 }
+```
+A phone in demo mode reports this speed from then on (in `risk_window.speed` and `signals.speed_mph`) and shows it straight away; the value stays for later demo trips. A phone not in demo mode ignores it and keeps using the GPS. The page is at `http://<backend-host>:8787/demo`; it posts `{"mph": 0..120}` to `/demo/speed`.
+
 ### `alarm`
 ```json
 { "type": "alarm" }

@@ -80,7 +80,7 @@ fun ContactsScreen(
                 Spacer(Modifier.width(10.dp))
                 Box(Modifier.weight(1f)) {
                     if (query.isEmpty()) Text("Search", color = SystemText, fontSize = 15.sp)
-                    BasicTextField(query, { query = it }, singleLine = true, textStyle = TextStyle(color = Ink, fontSize = 15.sp), cursorBrush = SolidColor(Main), modifier = Modifier.fillMaxWidth())
+                    BasicTextField(query, { query = it }, singleLine = true, textStyle = TextStyle(fontFamily = Inter, color = Ink, fontSize = 15.sp), cursorBrush = SolidColor(Main), modifier = Modifier.fillMaxWidth())
                 }
                 IconButton(onClick = {
                     val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)

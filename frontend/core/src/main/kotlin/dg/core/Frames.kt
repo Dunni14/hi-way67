@@ -161,6 +161,8 @@ sealed interface BackendFrame {
         val image: String,
     ) : BackendFrame
     data class Navigate(val query: String) : BackendFrame
+    /** Demo control (the backend's /demo slider): the speed to report from now on while in demo mode. */
+    data class DemoSpeed(val mph: Double) : BackendFrame
     /** Sound poll winner: play the bundled res/raw/<id> now (rooster, airhorn, goat). No reply. */
     data class PlaySound(val id: String) : BackendFrame
     /** No answer to the urgent check-in after a microsleep: sound the alarm now. */
@@ -236,6 +238,7 @@ fun decodeBackendFrame(text: String): BackendFrame {
             image = str("image") ?: "",
         )
         "navigate" -> BackendFrame.Navigate(str("query") ?: "rest stop")
+        "demo_speed" -> num("mph")?.takeIf { it.isFinite() && it >= 0 }?.let { BackendFrame.DemoSpeed(it) } ?: BackendFrame.Unknown(type)
         "play_sound" -> BackendFrame.PlaySound(str("id") ?: "airhorn")
         "alarm" -> BackendFrame.Alarm
         "error" -> BackendFrame.Error(str("message") ?: "")

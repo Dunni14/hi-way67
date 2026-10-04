@@ -221,8 +221,8 @@ private fun Count(modifier: Modifier, icon: ImageVector, tint: Color, bg: Color,
 @Composable
 private fun WeekChart(days: List<DailyStat>) {
     val measurer = rememberTextMeasurer()
-    val axis = TextStyle(color = Muted, fontSize = 11.sp)
-    val value = TextStyle(color = Ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+    val axis = TextStyle(fontFamily = Inter, color = Muted, fontSize = 11.sp)
+    val value = TextStyle(fontFamily = Inter, color = Ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
     val best = days.mapNotNull { it.score }.maxOrNull()
     Canvas(Modifier.fillMaxWidth().height(170.dp).padding(top = 4.dp)) {
         val axisW = 30.dp.toPx()

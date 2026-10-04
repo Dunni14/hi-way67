@@ -14,6 +14,7 @@ import pg from "pg";
 import { PgRiskStore, type Db } from "./risk/store/pg.ts";
 import { RiskService } from "./risk/service.ts";
 import { createRiskRoutes } from "./http/risk.ts";
+import { demoRoutes } from "./http/demo.ts";
 import { PgBanditStore } from "./bandit/store.ts";
 import { BanditService } from "./bandit/service.ts";
 import { policyFacts } from "./agent/answer.ts";
@@ -100,7 +101,9 @@ startPhoneServer(config.port, onPhone, () => ({
   groupChatKnown: hasGroup(),
   pollActive: soundPoll.isActive,
   pollVotes: soundPoll.votes.size,
-}), async (req, res) => (devChat ? await devChat(req, res) : false) || (riskRoutes ? await riskRoutes(req, res) : false));
+  // The demo speed slider (GET /demo) first, then /dev/chat (NO_SPECTRUM only), then the risk engine REST API.
+}), async (req, res) =>
+  (await demoRoutes(req, res)) || (devChat ? await devChat(req, res) : false) || (riskRoutes ? await riskRoutes(req, res) : false));
 
 if (process.env.NO_SPECTRUM) {
   console.log("[spectrum] skipped (NO_SPECTRUM set)");
