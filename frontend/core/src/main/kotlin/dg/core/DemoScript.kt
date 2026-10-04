@@ -3,29 +3,43 @@ package dg.core
 import kotlin.math.sin
 
 /**
- * Scripted Presage replay so the pipeline and the demo run without the SDK or a face.
- * `t` is seconds since trip start (calibration is the first 60 s). Phases:
- *   0-60 s   rested driver (becomes the baseline)
- *   60-100 s still fine, low score
- *   100 s+   drowsiness builds: eyes close more, yawns, nods -> tiers 40, 70, 85
+ * Scripted Presage replay so the pipeline and the demo run without the SDK or a face. `t` is
+ * script seconds since trip start; the backend's risk engine (10 s windows) scores it:
+ *   0-60 s    rested driver: the engine's 6 baseline windows
+ *   60-130 s  still fine, score about 4
+ *   130 s+    drowsy: eyes 40% closed, slow breathing, a yawn per window. The engine's drowsy level
+ *             reaches 0.67, and after 3 such windows (script 180 s) its drowsy_sustained_3
+ *             override fires tier 2: the first spoken warning.
+ *   256 s     a 2.2 s eye closure in window 251-260: the microsleep override fires tier 3
+ *             (urgent voice, alarm, contacts).
+ * With DemoClock that is about 0:15 and 1:08 real time. backend `npm run fake-phone` sends the
+ * same profile window by window.
  */
 object DemoScript {
     const val DEMO_SPEED_MPH = 65.0
+    const val DROWSY_FROM_S = 130.0
+    const val MICROSLEEP_AT_S = 256
 
     fun frame(tsMs: Long, tSec: Double): PresageFrame {
         val wobble = sin(tSec * 0.7) * 0.01
-        val drift = ((tSec - 100.0) / 600.0).coerceIn(0.0, 1.0) // 0 -> 1 over 100..700 s
         val sec = tSec.toInt()
+        val drowsy = tSec > DROWSY_FROM_S
         return PresageFrame(
             tsMs = tsMs,
             confidence = 0.95,
-            eyeClosed = (0.05 + wobble + drift * 0.30).coerceIn(0.0, 1.0),
-            longBlink = drift > 0.03 && sec % 6 == 0,
-            yawn = drift > 0.05 && sec % 20 == 0,
-            nod = drift > 0.25 && sec % 15 == 0,
-            heartRate = 72.0 - drift * 8 + wobble * 50,
-            breathing = 15.0 - drift * 4,
+            eyeClosed = ((if (drowsy) 0.40 else 0.05) + wobble).coerceIn(0.0, 1.0),
+            longBlink = drowsy && sec % 6 == 0,
+            yawn = drowsy && sec % 10 == 5,
+            heartRate = (if (drowsy) 64.0 else 72.0) + wobble * 50,
+            breathing = if (drowsy) 10.5 else 15.0,
             stress = 0.05,
+            talking = false,
+            mouthOpen = if (drowsy && sec % 10 == 5) 0.8 else 0.05,
+            closedRunMs = when {
+                sec == MICROSLEEP_AT_S -> 2_200
+                drowsy -> 600
+                else -> 250 // ordinary blink
+            },
         )
     }
 }

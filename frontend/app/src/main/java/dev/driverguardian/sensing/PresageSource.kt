@@ -129,7 +129,8 @@ class SmartSpectraPresageSource(private val context: Context) : PresageSource {
                     val blinking = face?.blinkingList?.lastOrNull()?.detected == true
                     if (blinking) { if (blinkSinceMs == null) blinkSinceMs = now } else blinkSinceMs = null
                     val scores = face?.expressionList?.lastOrNull()?.scoresList.orEmpty()
-                    fun score(t: MetricsProto.ExpressionType) = scores.firstOrNull { it.type == t }?.confidence?.toDouble() ?: 0.0
+                    // Presage reports expression confidence in percent (0..100); the engine wants 0..1.
+                    fun score(t: MetricsProto.ExpressionType) = ((scores.firstOrNull { it.type == t }?.confidence?.toDouble() ?: 0.0) / 100.0).coerceIn(0.0, 1.0)
 
                     val talking = face?.talkingList?.lastOrNull()?.detected
                     val f = sampler.drain()
@@ -137,7 +138,7 @@ class SmartSpectraPresageSource(private val context: Context) : PresageSource {
                     val eyeClosed = f.eyeClosed
                         ?: if (face != null && face.blinkingCount > 0) (if (blinking) 1.0 else 0.0) else null
                     // One line per second for tuning: watch mouth while yawning vs talking.
-                    Log.d(TAG, "face: frames=${f.samples} eyeClosed=${fmt(eyeClosed)} ear=${fmt(f.earMean)} earMin=${fmt(f.earMin)} mouthMax=${fmt(f.mouthOpenMax)} " +
+                    Log.d(TAG, "face: frames=${f.samples} eyeClosed=${fmt(eyeClosed)} ear=${fmt(f.earMean)} earMin=${fmt(f.earMin)} closedRun=${f.longestClosedMs}ms mouthMax=${fmt(f.mouthOpenMax)} " +
                         "talking=$talking blink=$blinking valid=$valid" + if (f.yawned) "  >>> YAWN (${sampler.totalYawns} this trip)" else "")
 
                     emit(PresageFrame(
@@ -152,6 +153,7 @@ class SmartSpectraPresageSource(private val context: Context) : PresageSource {
                         stress = if (scores.isEmpty()) null else maxOf(score(MetricsProto.ExpressionType.ANGRY), score(MetricsProto.ExpressionType.FEAR), score(MetricsProto.ExpressionType.DISGUST)),
                         talking = talking,
                         mouthOpen = f.mouthOpenMax,
+                        closedRunMs = if (f.samples > 0) f.longestClosedMs else null,
                     ))
                 }
             }

@@ -15,7 +15,7 @@ Node / TypeScript backend for Driver Guardian (MHacks 26). It talks to the Andro
 - `src/llm/openrouter.ts`: LLM client. Every LLM call has a non-LLM fallback. Keep it that way so the demo never stalls.
 - `src/dev/`: `fakePhone.ts` (simulates the Android app), `smokeTts.ts`, and `fakeDb.ts` (seeded PGlite stand-in for Tiger).
 
-The phone can either send its own `R` / `alert` frames (legacy path) or call the risk engine REST API (`src/risk/`, `src/http/risk.ts`, needs `DATABASE_URL`), which computes score, tier and actions server-side. See [`../docs/risk-engine.md`](../docs/risk-engine.md). Presage runs on the phone.
+The risk engine (`src/risk/`) is the only scorer. The phone sends raw-signal `risk_window` frames over the WebSocket; `orchestrator.ts` feeds each into `RiskService.ingestWindow`, whose hook (`onRiskEvaluation`) speaks and notifies, and sends the `evaluation` back to the phone. The same engine is also exposed as a REST API (`src/http/risk.ts`). It always runs: on `DATABASE_URL` (Tiger Data), or the seeded in-process fake database when that is unset. See [`../docs/risk-engine.md`](../docs/risk-engine.md). Presage runs on the phone. `npm run fake-phone` and `npx tsx src/dev/replayDemo.ts` exercise the engine without the app.
 
 ## Commands
 

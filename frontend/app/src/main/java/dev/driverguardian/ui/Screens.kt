@@ -43,7 +43,7 @@ import dev.driverguardian.net.BackendClient
 import dev.driverguardian.net.Conn
 import dev.driverguardian.trip.UiState
 import dev.driverguardian.voice.VoicePlayer
-import dg.core.Normalize
+import dg.core.SPEED_LIMIT_MPH
 import dg.core.SharingMode
 import kotlinx.coroutines.launch
 
@@ -62,6 +62,15 @@ private val CardShape = RoundedCornerShape(20.dp)
 private val Label = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, lineHeight = 15.sp, letterSpacing = 0.5.sp)
 
 val DriverGuardianColors = lightColorScheme(primary = Main, surface = Surface, onSurface = OnSurface)
+
+/** Why the risk engine raised the tier, in plain words. */
+private fun overrideText(o: String?) = when (o) {
+    "microsleep" -> "eyes closed too long"
+    "drowsy_sustained_3", "drowsy_sustained_12" -> "drowsy for a while"
+    "tier2_sustained_12" -> "warning ignored"
+    null -> null
+    else -> o
+}
 
 /** Drive tab (Figma "Drive"): status pill, speed vs limit, camera card with the trip button, four status tiles. */
 @Composable
@@ -85,7 +94,7 @@ fun DashcamScreen(
                 Modifier.size(85.dp, 86.dp).clip(CardShape).background(Surface),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
             ) {
-                Text("%.0f".format(Normalize.SPEED_LIMIT_MPH), color = SystemText, fontSize = 32.sp, fontWeight = FontWeight.Medium, lineHeight = 34.sp)
+                Text("%.0f".format(SPEED_LIMIT_MPH), color = SystemText, fontSize = 32.sp, fontWeight = FontWeight.Medium, lineHeight = 34.sp)
                 Text("speed\nlimit", color = SystemText, style = Label, textAlign = TextAlign.Center)
             }
         }
@@ -149,18 +158,20 @@ private fun statusTiles(ui: UiState, voice: VoicePlayer.State): List<Tile> {
         ui.calibrating -> Tile("Attention", eye, "--", "calibrating ${ui.calibrationLeftSec}s")
         else -> Tile(
             "Attention", eye,
-            when { ui.R >= 85 -> "DANGER"; ui.R >= 70 -> "POOR"; ui.R >= 40 -> "FAIR"; else -> "GOOD" },
-            "risk %.0f".format(ui.R),
-            when { ui.R >= 70 || ui.tier >= 70 -> Level.BAD; ui.R >= 40 || ui.tier >= 40 -> Level.GOOD; else -> Level.GREAT },
+            when (ui.tier) { 3 -> "DANGER"; 2 -> "POOR"; 1 -> "FAIR"; else -> "GOOD" },
+            overrideText(ui.override) ?: "risk %.0f".format(ui.score),
+            when { ui.tier >= 2 -> Level.BAD; ui.tier == 1 -> Level.GOOD; else -> Level.GREAT },
         )
     }
+    // The risk engine's drowsy level (0..1); 0.6 held for 3 windows is its tier 2 trigger.
+    val drowsyLevel = ui.levels["drowsy"] ?: 0.0
     val drowsy = when {
         ui.calibrating -> Tile("Drowsiness", null, "--", "yawns ${ui.yawnCount}")
         else -> Tile(
             "Drowsiness", null,
-            when { ui.drowsy >= 70 -> "HIGH"; ui.drowsy >= 40 -> "MEDIUM"; else -> "LOW" },
+            when { drowsyLevel >= 0.6 -> "HIGH"; drowsyLevel >= 0.3 -> "MEDIUM"; else -> "LOW" },
             "yawns ${ui.yawnCount}",
-            when { ui.drowsy >= 70 -> Level.BAD; ui.drowsy >= 40 -> Level.GOOD; else -> Level.GREAT },
+            when { drowsyLevel >= 0.6 -> Level.BAD; drowsyLevel >= 0.3 -> Level.GOOD; else -> Level.GREAT },
         )
     }
     val eyes = when {
@@ -310,21 +321,20 @@ fun DebugScreen(ui: UiState, client: BackendClient, conn: Conn, onBack: () -> Un
     val log by client.log.collectAsState()
     Column(Modifier.fillMaxSize().background(Color(0xFF101010)).verticalScroll(rememberScrollState()).padding(16.dp)) {
         Button(onClick = onBack) { Text("Back") }
-        Mono("R=%.1f drowsy=%.1f reckless=%.1f m=%.2f dominant=%s".format(ui.R, ui.drowsy, ui.reckless, ui.m, ui.dominant))
-        Mono("speed=%.0f mph  calibrating=${ui.calibrating}  cantSee=${ui.cantSeeDriver}  distracted=${ui.distracted} (not sent)".format(ui.speedMph))
-        Mono("gate: band=${ui.gateBand} held=${ui.gateHeldSec}s cooldowns(s)=${ui.cooldownSec}")
-        Mono("face: visible=${ui.faceVisible} eyeClosed=${ui.liveEyeClosed?.let { "%.2f".format(it) } ?: "—"} " +
+        Mono("risk engine (backend): tier ${ui.tier}  score %.1f  dominant ${ui.dominant}".format(ui.score))
+        Mono("override=${ui.override ?: "—"}  degraded=${ui.degraded}  calibrating=${ui.calibrating}  actions=${ui.lastActions}")
+        Mono("levels (0..1):")
+        for ((k, v) in ui.levels) Mono("  %-11s %.2f".format(k, v))
+        Mono("\"I'm fine\" feedback: " + (ui.feedbackFactor?.let { "%s weight x%.2f for this driver".format(it, ui.feedbackMultiplier ?: 1.0) } ?: "none yet"))
+        Spacer(Modifier.height(8.dp))
+        Mono("last window sent (#${ui.windowsSent}), speed=%.0f mph:".format(ui.speedMph))
+        ui.lastSignals?.let { s ->
+            Mono("  face=${s.faceVisible} eyesClosed=${s.eyeClosureFrac?.let { "%.2f".format(it) } ?: "—"} longestClosure=${s.longestEyeClosureS?.let { "%.1fs".format(it) } ?: "—"}")
+            Mono("  yawns=${s.yawns} hr=${s.heartRate?.let { "%.0f".format(it) } ?: "—"} br=${s.breathingRate?.let { "%.1f".format(it) } ?: "—"} stress=${s.emotionStress?.let { "%.2f".format(it) } ?: "—"} brakes=${s.hardBrakes} swerves=${s.swerves}")
+        }
+        Mono("face now: visible=${ui.faceVisible} eyeClosed=${ui.liveEyeClosed?.let { "%.2f".format(it) } ?: "—"} " +
             "mouth=${ui.mouthOpen?.let { "%.2f".format(it) } ?: "—"} (yawn ≥ %.2f) talking=${ui.talking} yawns=${ui.yawnCount}".format(dg.core.FaceGeometry.MAR_YAWN))
         Mono("backend: ${conn.name} buffered=${client.buffered}")
-        Spacer(Modifier.height(8.dp))
-        Mono("feature          x      w_drowsy (before)   w_reckless")
-        for ((k, v) in ui.features) {
-            val wd = ui.weightsDrowsy[k] ?: 0.0
-            val wr = ui.weightsReckless[k] ?: 0.0
-            val before = if (ui.nudgeDominant == dg.core.Dominant.DROWSY) ui.nudgeBefore[k] else null
-            Mono("%-17s %-6s %.3f %-10s %.3f".format(k, v?.let { "%.2f".format(it) } ?: "—", wd, before?.let { "(%.3f)".format(it) } ?: "", wr))
-        }
-        if (ui.nudgeDominant == dg.core.Dominant.RECKLESS) Mono("last nudge applied to reckless: before=${ui.nudgeBefore.mapValues { "%.3f".format(it.value) }}")
         Spacer(Modifier.height(8.dp))
         Mono("frames:")
         log.forEach { Mono(it) }
@@ -381,7 +391,7 @@ fun ReportCardScreen(card: dg.core.ReportCard, onDone: () -> Unit) {
         }
         Text(card.advice, color = Color.White, fontSize = 16.sp)
         RiskChart(card.series, Modifier.fillMaxWidth().height(180.dp))
-        Mono("avg risk %.0f   peak %.0f   time at 70+: %.0f%%".format(card.avgRisk, card.peakRisk, card.pctHighRisk))
+        Mono("avg risk %.0f   peak %.0f   time at warning or worse: %.0f%%".format(card.avgRisk, card.peakRisk, card.pctHighRisk))
         Mono("alerts: " + if (card.alertsByTier.isEmpty()) "none" else card.alertsByTier.entries.joinToString("  ") { "T${it.key}×${it.value}" })
         if (card.eventCounts.isNotEmpty()) Mono("events: " + card.eventCounts.entries.joinToString("  ") { "${it.key}×${it.value}" })
         Button(onClick = onDone) { Text("Done") }

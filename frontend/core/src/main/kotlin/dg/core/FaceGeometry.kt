@@ -68,6 +68,8 @@ data class FaceSummary(
     val eyeClosed: Double?, // mean eye closure 0..1 across the samples
     val mouthOpenMax: Double?, // peak mouth openness, for tuning MAR_YAWN
     val yawned: Boolean,
+    /** Longest continuous eye closure touched since the last drain; a run still in progress counts its full length so far. */
+    val longestClosedMs: Long = 0,
     val earMean: Double? = null, // raw eye aspect ratio, for tuning EAR_OPEN / EAR_CLOSED
     val earMin: Double? = null,
 )
@@ -91,6 +93,8 @@ class FaceSampler(private val yawns: YawnDetector = YawnDetector()) {
     private var earSum = 0.0
     private var earMin: Double? = null
     private var yawned = false
+    private var closedSinceMs: Long? = null // start of the current eyes-closed run
+    private var periodClosedMs = 0L
 
     /** Feed one sample. Returns false if it was a duplicate. */
     fun add(ts: Long, points: List<Pt>): Boolean {
@@ -98,18 +102,36 @@ class FaceSampler(private val yawns: YawnDetector = YawnDetector()) {
         if (unitsPerMs == null && lastTs != Long.MIN_VALUE) unitsPerMs = unitFromFrameGap(ts - lastTs)
         lastTs = ts
         n++
+        val tMs = ts / (unitsPerMs ?: 1000L)
         val ear = FaceGeometry.eyeOpenness(points)
         val mar = FaceGeometry.mouthOpenness(points)
-        if (ear != null) { closureSum += FaceGeometry.eyeClosure(ear); closureN++; earSum += ear; earMin = minOf(earMin ?: ear, ear) }
+        if (ear != null) {
+            val closure = FaceGeometry.eyeClosure(ear)
+            closureSum += closure; closureN++; earSum += ear; earMin = minOf(earMin ?: ear, ear)
+            if (closure >= CLOSED) {
+                val since = closedSinceMs ?: tMs.also { closedSinceMs = it }
+                periodClosedMs = maxOf(periodClosedMs, tMs - since)
+            } else {
+                closedSinceMs = null
+            }
+        }
         if (mar != null) mouthMax = maxOf(mouthMax ?: mar, mar)
-        if (yawns.update(ts / (unitsPerMs ?: 1000L), mar)) { yawned = true; totalYawns++ }
+        if (yawns.update(tMs, mar)) { yawned = true; totalYawns++ }
         return true
     }
 
     fun drain(): FaceSummary {
-        val s = FaceSummary(n, if (closureN > 0) closureSum / closureN else null, mouthMax, yawned, if (closureN > 0) earSum / closureN else null, earMin)
-        n = 0; closureSum = 0.0; closureN = 0; mouthMax = null; yawned = false; earSum = 0.0; earMin = null
+        val s = FaceSummary(
+            samples = n, eyeClosed = if (closureN > 0) closureSum / closureN else null, mouthOpenMax = mouthMax, yawned = yawned,
+            longestClosedMs = periodClosedMs, earMean = if (closureN > 0) earSum / closureN else null, earMin = earMin,
+        )
+        n = 0; closureSum = 0.0; closureN = 0; mouthMax = null; yawned = false; periodClosedMs = 0; earSum = 0.0; earMin = null
         return s
+    }
+
+    private companion object {
+        /** Eye closure (0..1) at or above this counts as "eyes closed" for continuous-closure runs. */
+        const val CLOSED = 0.7
     }
 
     /** Camera frames are 15-60 ms apart; pick the unit that makes the gap land there. */

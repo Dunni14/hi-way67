@@ -3,78 +3,78 @@
 ## Components
 
 ```
-┌──────────────── Android app (PROTOTYPE) ──────────────────┐
-│ Front camera → Presage → features → risk score → tree     │
+┌──────────────── Android app (frontend/) ──────────────────┐
+│ Front camera → Presage → FaceSampler (eyes, yawns)        │
 │ GPS / IMU → speed, hard brake, swerve                     │
-│ Audio playback · speech recognition · maps intent         │
+│ WindowAggregator → raw signals every 10 s                 │
+│ Screen · alarm · audio playback · speech recognition      │
 └──────────────┬──────────────────────────────▲─────────────┘
-               │ risk_window, alert,          │ speak (mp3), navigate,
-               │ utterance, speak_done, ...   │ dismissed, error
+               │ risk_window (raw signals),   │ evaluation, speak (mp3),
+               │ utterance, speak_done, ...   │ navigate, dismissed, error
                ▼                              │
-┌──────────────── Backend (Node / TypeScript, DONE) ────────┐
+┌──────────────── Backend (Node / TypeScript) ──────────────┐
 │ ws/server.ts ── orchestrator.ts ── voice/driverQueue.ts ──┼──► ElevenLabs TTS
-│                    │      │                               │
-│        trip/state.ts      agent/* ────────────────────────┼──► OpenRouter LLM
-│        trip/store.ts (in-memory STUB → Tiger Data)        │
-│                           │                               │
-│                    agent/spectrum.ts ─────────────────────┼──► Photon Spectrum
+│                    │                                      │
+│                    ├── risk/ (engine) ── store ───────────┼──► Postgres / Tiger Data
+│                    │       └── bandit/ (interventions)    │    (fake in-process DB if unset)
+│        trip/state.ts (live view for chat)                 │
+│                    └── agent/* ───────────────────────────┼──► OpenRouter LLM
+│                         agent/spectrum.ts ────────────────┼──► Photon Spectrum
 └───────────────────────────────────────────────────────────┘        │
-                                                          iMessage group / DMs
-                                                          (Telegram optional)
+                                                          iMessage / Telegram
 ```
 
-- **Android app** (`android/`). Today it runs Presage with a debug overlay (heart rate, blinks, expression, face mesh); the WebSocket link is not built yet. It is meant to own sensing, scoring and the timing half of the decision tree. Spec: [phone-app.md](phone-app.md).
-- **Backend.** One Node process. It holds trip state, talks to the phone over a WebSocket, talks to the family chat through Spectrum, and makes every third-party API call. API keys never reach the phone.
+- **Android app** (`frontend/`). Senses and displays. Every 10 s it sends one window of raw signals; it never scores. It shows the engine's verdict, plays the alarm, plays the backend's voice and listens for replies. `android/` is a standalone Presage demo kept as an SDK reference.
+- **Backend.** One Node process. Its **risk engine** (`src/risk`, see [risk-engine.md](risk-engine.md)) scores every window and decides every alert; the orchestrator carries those decisions out (voice, group chat, contacts). It makes every third-party API call; keys never reach the phone.
 
 ## Backend boot sequence
 
 [`src/index.ts`](../backend/src/index.ts):
 
-1. Create the `TripStore`. Today this is always `InMemoryTripStore`.
-2. `createOrchestrator(store)` returns two handlers: `onPhone` for WebSocket frames and `onChat` for Spectrum messages.
-3. `startPhoneServer(PORT, onPhone, status)` serves `ws://…/phone` and `GET /health`.
-4. Unless `NO_SPECTRUM` is set, `startSpectrum(onChat)` connects to Photon and starts the inbound message loop.
+1. Create the in-memory `TripStore` (chat facts: recent trips, contact preferences) and the orchestrator.
+2. Open the risk store: `DATABASE_URL` (Tiger Data), or the seeded in-process fake database when it is unset or unreachable (or `FAKE_DB=1`). The engine always runs.
+3. Create the bandit (on `TIGER_DATABASE_URL`, or the fake database), then the `RiskService` with the orchestrator's `onRiskEvaluation` as its hook; hand it to the orchestrator (`setRisk`) and mount the REST routes.
+4. `startPhoneServer(PORT, onPhone, status, riskRoutes)` serves `ws://…/phone`, `GET /health` and the risk REST API.
+5. Unless `NO_SPECTRUM` is set, `startSpectrum(onChat)` connects to Photon.
 
 ## Who owns the decision tree
 
-The root README's decision tree (§4) is split in two:
+All of it is on the backend now; the phone only senses.
 
-| Responsibility | Owner | Status |
-|---|---|---|
-| Compute `R`, `drowsy`, `reckless` every 10 s | Phone | Not started |
-| Map R to a tier (40 / 70 / 85) and pick the dominant sub-score | Phone | Not started |
-| 15 s hold, 2 min per-tier cooldown, "70 sustained 2 min → 85" | Phone | Not started |
-| Kids-in-car bump: 70 → 85 | Backend | Done |
-| Tier → spoken line (template + ElevenLabs settings) | Backend | Done |
-| 85 → guardian alert, roast, or permission prompt depending on sharing mode | Backend | Done |
-| "I'm fine" → `dismissed` frame | Backend | Done |
-| Weight nudge on `dismissed` | Phone | Not started |
-
-The phone **reports** and the backend **acts**. The backend never computes risk itself; it trusts `R` and `tier` from the phone.
+| Responsibility | Owner |
+|---|---|
+| Collect 10 s of raw signals (eye-closure share, longest closure, yawns, vitals, speed, IMU events) | Phone (`WindowAggregator`) |
+| Baseline (6 windows), smoothing, levels, odds-ratio score | Engine (`risk/decision.ts`, `score.ts`, `levels.ts`) |
+| Tier 0–3, 2-window hold, overrides (microsleep, sustained drowsiness, ignored warning), kids-in-car raise | Engine |
+| Cooldowns (voice 2 min per tier, contacts 10 min) | Engine |
+| Which line to say at tier 1/2 | Bandit (`bandit/`) |
+| Speaking, group alert, location to guardians, roast, permission question | Orchestrator (`onRiskEvaluation` → `onAlert`) |
+| "I'm fine" → false-alarm feedback (per-driver weight ×0.95, bandit penalty) | Orchestrator → engine |
+| Alarm sound on `voice_urgent` | Phone |
 
 ## Main data flows
 
 ### Risk window (every 10 s)
 
 ```
-phone ── risk_window ──► orchestrator
-                          ├─ starts a trip if none is active
-                          ├─ trip.addWindow()       (keeps the last 30 min in memory)
-                          ├─ hard_brake event? → driverQueue.pause(10 s)
-                          └─ store.saveWindow()     (in-memory stub)
+phone ── risk_window{signals} ──► orchestrator.onRiskWindow
+   ├─ starts the trip (and the engine trip) if none is active
+   ├─ hard_brake event? → driverQueue.pause(10 s)
+   ├─ risk.ingestWindow() → stores the window (+ event) in Postgres/Tiger, returns the evaluation
+   │     └─ hook → onRiskEvaluation → voice / contacts (below)
+   ├─ trip.addWindow()   (live view for chat answers and the roast text)
+   └─ sendToPhone(evaluation)
 ```
 
 ### Alert
 
 ```
-phone ── alert{tier, dominant, R} ──► onAlert
-   tier = 85 if (tier == 70 and kidsInCar) else tier
-   tier < 85  → speak alert line (priority, listen 5 s, context "checkin")
-   tier = 85  → speak urgent line (priority)
-                sharing never → speak permission question (listen 5 s, context "permission")
-                otherwise     → escalate():
-                                  post guardian alert (+ maps link) to guardians
-                                  dominant drowsy and no roast running → start roast, post roast call
+engine evaluation{tier, dominant, actions, intervention?} ──► onRiskEvaluation → onAlert
+   tier 1/2 (voice_nudge / voice_warning) → speak the bandit's line, or the template (priority, listen 5 s)
+   tier 3   (voice_urgent)                → speak urgent line (priority)
+            notify_contacts           → escalate(): alert to the group, location to guardians,
+                                         drowsy and no roast running → start roast, post roast call
+            ask_permission_to_notify  → speak permission question (listen 5 s, context "permission")
 ```
 
 ### Chat message
@@ -95,7 +95,7 @@ Details in [imessage-agent.md](imessage-agent.md).
 ```
 phone ── utterance{text, context} ──► parseDriverUtterance()  (regex)
    pending permission → yes: escalate / no: acknowledge
-   dismiss → send dismissed, ack, resolve roast if running
+   dismiss → engine false-alarm feedback, send dismissed{factor, multiplier}, ack, resolve roast if running
    yes     → after a check-in: navigate to a rest stop; during a roast: resolve it
    reply   → during a roast: resolve it; otherwise post "Alex says: …"
 ```
@@ -104,7 +104,7 @@ Details in [voice.md](voice.md#driver-intent-parsing).
 
 ## State
 
-All runtime state is in process memory:
+Live state is in process memory; scored trips persist in the risk store:
 
 | State | Where | Lifetime |
 |---|---|---|
@@ -114,6 +114,8 @@ All runtime state is in process memory:
 | Pending permission question | closure in `orchestrator.ts` | Until a yes/no utterance |
 | Speech queue | `voice/driverQueue.ts` | Cleared on `trip_end` |
 | Group chat space, DM spaces | `agent/spectrum.ts` | Until restart |
-| Trip history, windows, contact prefs | `InMemoryTripStore` | Until restart (**Stub** for Tiger Data) |
+| Engine trips, every scored window, alert events, per-driver weights, bandit models | Risk store (`risk/store/pg.ts`, `bandit/store.ts`): Postgres / Tiger Data | Permanent on Tiger (raw windows 7 days); in memory on the fake DB |
+| Engine runtime per active trip | `RiskService` (rebuilt by replaying stored windows after a restart) | Until `trip_end` |
+| Trip summaries for chat (late-night count), contact prefs | `InMemoryTripStore` | Until restart |
 
 Only one phone can be connected at a time, and there is a single global trip. The backend serves one driver.
