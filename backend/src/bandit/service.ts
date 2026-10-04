@@ -11,10 +11,20 @@ import type { Evaluation } from "../risk/types.ts";
 
 export type Intervention = { id: string; event_ts: string; learned: boolean };
 
-/** Whether this driver has a family voice recorded. Nothing in the repo configures one yet, so the default is "no". */
+/** Whether this driver has a family voice recorded. Default "no"; `index.ts` passes `ELEVENLABS_FAMILY_VOICE_ID` being set. */
 export type FamilyVoiceLookup = (driverId: string) => boolean | Promise<boolean>;
 
 export class BanditService {
+  /** Model updates are read-modify-write; trips of one driver can settle at the same time, so serialize per driver (this process only). */
+  private locks = new Map<string, Promise<unknown>>();
+
+  private withDriverLock<T>(driverId: string, fn: () => Promise<T>): Promise<T> {
+    const next = (this.locks.get(driverId) ?? Promise.resolve()).catch(() => {}).then(fn);
+    this.locks.set(driverId, next);
+    void next.finally(() => this.locks.get(driverId) === next && this.locks.delete(driverId)).catch(() => {});
+    return next;
+  }
+
   constructor(
     private store: BanditStore,
     private cfg: BanditConfig = banditConfig,
@@ -89,8 +99,11 @@ export class BanditService {
         );
       }
       if (reward != null) {
-        const m = (await this.store.getModels(ev.driverId, [ev.action]))[ev.action] ?? initModel(ev.context.length, this.isDefault(ev.action) ? this.cfg.defaultBias : 0);
-        await this.store.saveModel(ev.driverId, ev.action, update(m, ev.context, reward));
+        const r = reward;
+        await this.withDriverLock(ev.driverId, async () => {
+          const m = (await this.store.getModels(ev.driverId, [ev.action]))[ev.action] ?? initModel(ev.context.length, this.isDefault(ev.action) ? this.cfg.defaultBias : 0);
+          await this.store.saveModel(ev.driverId, ev.action, update(m, ev.context, r));
+        });
       }
       await this.store.resolveEvent(trip.id, ev.ts, reward, nowTs);
     }

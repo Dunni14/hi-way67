@@ -13,6 +13,8 @@ export type SpeakItem = {
   context: SpeakContext;
   listenAfterMs?: number;
   priority?: boolean;
+  /** ElevenLabs voice to use instead of the default (e.g. a family member's voice). */
+  voiceId?: string;
 };
 
 const HARD_BRAKE_PAUSE_MS = 10_000;
@@ -66,7 +68,7 @@ class DriverQueue {
 
     let audio = "";
     try {
-      audio = (await tts(item.text, item.tier ?? 0)).toString("base64");
+      audio = (await tts(item.text, item.tier ?? 0, item.voiceId)).toString("base64");
     } catch (err) {
       console.error("[voice] TTS failed, sending text only:", (err as Error).message);
     }

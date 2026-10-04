@@ -14,10 +14,11 @@ import { RiskService } from "./risk/service.ts";
 import { createRiskRoutes } from "./http/risk.ts";
 import { PgBanditStore } from "./bandit/store.ts";
 import { BanditService } from "./bandit/service.ts";
+import { policyFacts } from "./agent/answer.ts";
 
 // TODO(tiger-data): swap in the Timescale-backed TripStore when it's ready.
 const store = new InMemoryTripStore();
-const { onPhone, onChat, onRiskEvaluation } = createOrchestrator(store);
+const { onPhone, onChat, onRiskEvaluation, setInsights } = createOrchestrator(store);
 
 // Risk engine REST API; needs Postgres.
 let riskRoutes: ReturnType<typeof createRiskRoutes> | undefined;
@@ -28,9 +29,12 @@ if (config.databaseUrl) {
   if (config.tigerDatabaseUrl) {
     const banditStore = new PgBanditStore(new pg.Pool({ connectionString: config.tigerDatabaseUrl }));
     await banditStore.migrate();
-    bandit = new BanditService(banditStore);
+    bandit = new BanditService(banditStore, undefined, () => Boolean(config.elevenLabs.familyVoiceId));
   }
-  riskRoutes = createRiskRoutes(new RiskService(riskStore, undefined, (_tripId, ev) => onRiskEvaluation(ev), bandit));
+  const riskService = new RiskService(riskStore, undefined, (_tripId, ev, intervention) => onRiskEvaluation(ev, intervention), bandit);
+  // The driver id the phone sends to the REST API is the driver's name.
+  if (bandit) setInsights(async () => policyFacts(trip.driverName, await riskService.driverPolicy(trip.driverName)));
+  riskRoutes = createRiskRoutes(riskService);
   console.log(`[risk] REST API enabled (Postgres), adaptive recommendations ${bandit ? "on (Tiger Data)" : "off (TIGER_DATABASE_URL not set)"}`);
 } else {
   console.log("[risk] REST API disabled (DATABASE_URL not set)");

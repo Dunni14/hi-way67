@@ -9,6 +9,8 @@ import { choose, initModel, solve, update } from "./linucb.ts";
 import { allowedActions, computeReward } from "./reward.ts";
 import { PgBanditStore } from "./store.ts";
 import { BanditService } from "./service.ts";
+import { gradeOf, interventionLine } from "../voice/lines.ts";
+import { policyFacts } from "../agent/answer.ts";
 
 const cfg = banditConfig;
 const near = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-9, `${a} != ${b}`);
@@ -78,11 +80,12 @@ const AGITATED = { emotion_stress: 1, heart_rate: 95 };
 
 let db: PGlite;
 let svc: RiskService;
+let riskStore: PgRiskStore;
 let bandit: BanditService;
 
 before(async () => {
   db = new PGlite();
-  const store = new PgRiskStore(db);
+  const store = (riskStore = new PgRiskStore(db));
   await store.migrate();
   const banditStore = new PgBanditStore(db);
   await banditStore.migrate();
@@ -209,4 +212,52 @@ test("false_alarm feedback on the intervention lowers its reward by 0.5", async 
   const plain = await run("fa-no", false);
   const flagged = await run("fa-yes", true);
   near(plain - flagged, 0.5);
+});
+
+test("reward ignores baseline windows (they carry no levels)", async () => {
+  const trip = await startTrip("baseline-check");
+  await drive(trip, DROWSY, 19);
+  const ev = (await events("baseline-check"))[0];
+  const rows = (await db.query(`SELECT result FROM windows WHERE trip_id = $1 ORDER BY ts`, [trip])).rows.map((r: any) => r.result.levels.drowsy as number);
+  // Intervention at window 7: "before" is window 6 only (window 5 is baseline), "after" the last three windows.
+  const expected = computeReward(
+    { before: [rows[6]!], after: rows.slice(17, 20), stoppedAfterDrowsy: false, falseAlarm: false, tierWentUp: true },
+    cfg,
+  );
+  near(ev.reward, expected!);
+});
+
+test("two trips of one driver settling at once both update the model", async () => {
+  const a = await startTrip("twin");
+  const b = await startTrip("twin");
+  await drive(a, DROWSY, 18);
+  await drive(b, DROWSY, 18);
+  await Promise.all([win(a, 19, DROWSY), win(b, 19, DROWSY)]);
+  assert.equal((await svc.driverPolicy("twin")).actions.find((x) => x.action === "calm_checkin")!.updates, 2);
+});
+
+test("the in-process hook receives the intervention with the evaluation", async () => {
+  const seen: any[] = [];
+  const hooked = new RiskService(riskStore, undefined, (_t, ev, iv) => void seen.push({ tier: ev.tier, iv }), bandit);
+  const { trip_id } = await hooked.startTrip({ driver_id: "hooked", kids_in_car: false, low_experience: false, sleep_hours: 4 });
+  for (let i = 0; i <= 7; i++) await hooked.ingestWindow(trip_id, { ...NEUTRAL, ...(i < 6 ? {} : DROWSY), ts: new Date(T0 + i * 10_000).toISOString() });
+  assert.equal(seen.length, 8);
+  assert.equal(seen[7].tier, 1);
+  assert.equal(seen[7].iv.id, "calm_checkin");
+  assert.equal(seen[0].iv, undefined);
+});
+
+test("every configured action has a spoken line; report card uses the grade", () => {
+  for (const id of Object.keys(cfg.actions)) assert.ok(interventionLine(id, { grade: "C" }), id);
+  assert.equal(interventionLine("nope"), null);
+  assert.match(interventionLine("report_card_reminder", { grade: "C" })!, /scoring a C/);
+  assert.deepEqual([gradeOf(10), gradeOf(40), gradeOf(70), gradeOf(85)], ["A", "B", "C", "D"]);
+});
+
+test("policy facts name the best action only once it has clearly worked", () => {
+  const row = (action: string, updates: number, mean_reward: number | null) => ({ action, updates, mean_reward });
+  assert.deepEqual(policyFacts("Alex", { actions: [row("start_conversation", 1, 1)] }), []);
+  assert.deepEqual(policyFacts("Alex", { actions: [row("calm_checkin", 5, -0.4)] }), []);
+  const f = policyFacts("Alex", { actions: [row("calm_checkin", 4, 0.2), row("start_conversation", 3, 0.8)] });
+  assert.match(f[0]!, /having a conversation.*Alex/);
 });

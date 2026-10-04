@@ -5,7 +5,7 @@ import type { TripStore } from "./trip/store.ts";
 import type { PhoneMsg, Tier, Dominant } from "./ws/protocol.ts";
 import { sendToPhone } from "./ws/server.ts";
 import { driverQueue } from "./voice/driverQueue.ts";
-import { ackLine, alertLine, messageLine, permissionLine, roastLine } from "./voice/lines.ts";
+import { ackLine, alertLine, ASKS_REST_STOP, gradeOf, interventionLine, messageLine, permissionLine, roastLine } from "./voice/lines.ts";
 import { post, dm, type Inbound } from "./agent/spectrum.ts";
 import { classify, shortenForSpeech } from "./agent/classifier.ts";
 import { answerQuestion } from "./agent/answer.ts";
@@ -13,12 +13,19 @@ import { parseDriverUtterance } from "./agent/driverIntent.ts";
 import { roast } from "./agent/roast.ts";
 import { allContacts } from "./agent/contacts.ts";
 import type { Evaluation } from "./risk/types.ts";
+import type { Intervention } from "./bandit/service.ts";
+import { config } from "./config.ts";
 
 const LISTEN_MS = 5000;
 
 export function createOrchestrator(store: TripStore) {
   const d = () => trip.driverName;
   let pendingPermission: { dominant: Dominant } | null = null;
+  // Extra facts for chat answers (what the bandit has learned); set once the risk service exists.
+  let insights: (() => Promise<string[]>) | null = null;
+  const setInsights = (fn: () => Promise<string[]>) => {
+    insights = fn;
+  };
 
   // ---- phone -> backend ----------------------------------------------------
 
@@ -101,35 +108,64 @@ export function createOrchestrator(store: TripStore) {
 
   /**
    * Risk engine (REST API) -> existing voice / iMessage path. The engine has
-   * already applied hold, cooldown and the kids bump, so only act when it asks
-   * for a voice action, and don't bump again.
+   * already applied hold, cooldown and the kids bump, so this carries out what
+   * it asked for: a voice line (the bandit's intervention when there is one)
+   * and/or the contact notification (`notify_contacts`, limited by the engine
+   * to once per 10 min, or the permission question when sharing is off).
+   * No bump again here.
    */
-  async function onRiskEvaluation(ev: Evaluation) {
-    if (ev.tier === 0 || !ev.actions.some((a) => a.startsWith("voice_"))) return;
+  async function onRiskEvaluation(ev: Evaluation, intervention?: Intervention) {
+    if (ev.tier === 0) return;
+    const voice = ev.actions.some((a) => a.startsWith("voice_"));
+    const notify = ev.actions.includes("notify_contacts") ? "notify" : ev.actions.includes("ask_permission_to_notify") ? "ask" : "none";
+    if (!voice && notify === "none") return;
     const tier: Tier = ev.tier === 3 ? 85 : ev.tier === 2 ? 70 : 40;
-    await onAlert(tier, ev.dominant, ev.score, { bumped: true });
+    await onAlert(tier, ev.dominant, ev.score, { bumped: true, voice, notify, intervention: intervention?.id });
   }
 
-  async function onAlert(phoneTier: Tier, dominant: Dominant, R: number, opts: { bumped?: boolean } = {}) {
+  type AlertOpts = {
+    bumped?: boolean;
+    /** Speak the alert line. Default true. */
+    voice?: boolean;
+    /** Tier 3 only. Default follows the phone's sharing mode (legacy phone path). */
+    notify?: "notify" | "ask" | "none";
+    /** Bandit intervention id: replaces the generic line for tier 1/2. */
+    intervention?: string;
+  };
+
+  async function onAlert(phoneTier: Tier, dominant: Dominant, R: number, opts: AlertOpts = {}) {
     // Kids in the car bump the 70 tier up a level (README §4). Alerts from the
     // risk engine arrive already bumped.
     const tier: Tier = !opts.bumped && phoneTier === 70 && trip.kidsInCar ? 85 : phoneTier;
-    trip.recordAlert(tier, dominant, R);
-    console.log(`[alert] tier=${tier} (${dominant}) R=${Math.round(R)}`);
+    const voice = opts.voice ?? true;
+    if (voice) trip.recordAlert(tier, dominant, R);
+    console.log(`[alert] tier=${tier} (${dominant}) R=${Math.round(R)}${opts.intervention ? ` intervention=${opts.intervention}` : ""}`);
 
     if (tier < 85) {
       // Mid-tier: voice only, never the group chat.
-      driverQueue.enqueue({ text: alertLine(tier, dominant), tier, context: "checkin", listenAfterMs: LISTEN_MS, priority: true });
+      if (!voice) return;
+      const id = opts.intervention;
+      const line = (id && interventionLine(id, { grade: gradeOf(trip.maxR) })) || alertLine(tier, dominant);
+      driverQueue.enqueue({
+        text: line,
+        tier,
+        context: "checkin",
+        // Only the rest-stop offer waits for a yes/no; other replies would be relayed to the group chat.
+        listenAfterMs: id && !ASKS_REST_STOP.has(id) ? 0 : LISTEN_MS,
+        priority: true,
+        voiceId: id === "family_voice_warning" ? config.elevenLabs.familyVoiceId || undefined : undefined,
+      });
       return;
     }
 
-    driverQueue.enqueue({ text: alertLine(85, dominant), tier: 85, context: "checkin", listenAfterMs: 0, priority: true });
-    if (trip.sharingMode === "never") {
+    if (voice) driverQueue.enqueue({ text: alertLine(85, dominant), tier: 85, context: "checkin", listenAfterMs: 0, priority: true });
+    const notify = opts.notify ?? (trip.sharingMode === "never" ? "ask" : "notify");
+    if (notify === "ask") {
       pendingPermission = { dominant };
       driverQueue.enqueue({ text: permissionLine(), tier: 85, context: "permission", listenAfterMs: LISTEN_MS });
-      return;
+    } else if (notify === "notify") {
+      await escalate(dominant);
     }
-    await escalate(dominant);
   }
 
   async function escalate(dominant: Dominant) {
@@ -203,7 +239,9 @@ export function createOrchestrator(store: TripStore) {
         return;
 
       case "question":
-        await space.responding(async () => message.reply(await answerQuestion(text, contact.name, contact.role)));
+        // Learned "what works for the driver" is shared with guardians only, and never when sharing is off.
+        const extra = contact.role === "guardian" && trip.sharingMode !== "never" && insights ? await insights().catch(() => []) : [];
+        await space.responding(async () => message.reply(await answerQuestion(text, contact.name, contact.role, extra)));
         return;
 
       case "arrival_pref":
@@ -233,7 +271,7 @@ export function createOrchestrator(store: TripStore) {
     }
   }
 
-  return { onPhone, onChat, onRiskEvaluation };
+  return { onPhone, onChat, onRiskEvaluation, setInsights };
 }
 
 function isNight(date: Date) {

@@ -27,7 +27,7 @@ export class RiskService {
     private store: RiskStore,
     private cfg: RiskConfig = riskConfig,
     /** Optional hook for in-process consumers (the orchestrator). Failures never affect the response. */
-    private onEvaluation?: (tripId: string, ev: Evaluation) => void | Promise<void>,
+    private onEvaluation?: (tripId: string, ev: Evaluation, intervention?: Intervention) => void | Promise<void>,
     /** Optional adaptive-recommendation layer (needs TIGER_DATABASE_URL). Never changes tiers or actions. */
     private bandit?: BanditService,
   ) {}
@@ -74,18 +74,19 @@ export class RiskService {
     if (evaluation.actions.some((a) => a !== "none")) {
       await this.store.addEvent({ tripId, ts, tier: evaluation.tier, actions: evaluation.actions, override: evaluation.override });
     }
+    const rec = this.bandit ? await this.recommend(trip, evaluation, ts) : {};
     try {
-      void Promise.resolve(this.onEvaluation?.(tripId, evaluation)).catch((e) => console.error("[risk] onEvaluation:", e));
+      void Promise.resolve(this.onEvaluation?.(tripId, evaluation, rec.intervention)).catch((e) => console.error("[risk] onEvaluation:", e));
     } catch (e) {
       console.error("[risk] onEvaluation:", e);
     }
-    return this.bandit ? { ...evaluation, ...(await this.recommend(trip, evaluation, ts)) } : evaluation;
+    return { ...evaluation, ...rec };
   }
 
-  /** Settle due rewards, then pick an intervention for a tier 1/2 voice action. A bandit failure never breaks the response. */
+  /** Settle due rewards (from scored windows only: baseline windows carry no levels), then pick an intervention for a tier 1/2 voice action. A bandit failure never breaks the response. */
   private async recommend(trip: TripRow, ev: Evaluation, ts: string): Promise<{ intervention?: Intervention }> {
     try {
-      await this.bandit!.processRewards({ trip, nowTs: ts, windows: () => this.store.getWindows(trip.id) });
+      await this.bandit!.processRewards({ trip, nowTs: ts, windows: async () => (await this.store.getWindows(trip.id)).slice(this.cfg.baselineWindows) });
       const intervention = await this.bandit!.select({ trip, ev, ts });
       return intervention ? { intervention } : {};
     } catch (e) {
