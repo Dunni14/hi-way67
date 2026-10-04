@@ -212,11 +212,11 @@ private fun StatusTile(t: Tile, modifier: Modifier) {
     val bad = t.level == Level.BAD
     val valueColor = when (t.level) { Level.GREAT -> Good; Level.GOOD -> Main; Level.BAD -> Surface; Level.NONE -> SystemText }
     Row(
-        modifier.height(86.dp).card(color = if (bad) Bad else Color.White, elevation = if (bad) 14.dp else 10.dp).padding(start = 18.dp, end = 6.dp),
+        modifier.height(86.dp).card(color = if (bad) Bad else Color.White, elevation = if (bad) 14.dp else 10.dp).padding(start = 14.dp, end = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val tint = if (bad) Color.White else Main
-        Box(Modifier.size(46.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(42.dp), contentAlignment = Alignment.Center) {
             if (t.icon != null) {
                 Icon(painterResource(t.icon), contentDescription = null, tint = tint, modifier = Modifier.fillMaxSize())
             } else {
@@ -224,11 +224,12 @@ private fun StatusTile(t: Tile, modifier: Modifier) {
                 Icon(Icons.Rounded.Bedtime, contentDescription = null, tint = tint, modifier = Modifier.fillMaxSize())
             }
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(10.dp))
         Column {
-            Text(t.label, color = if (bad) Pressed else SystemText, style = Label, maxLines = 1)
+            // Inter runs wider than the system font: keep the label on one line and a touch tighter.
+            Text(t.label, color = if (bad) Pressed else SystemText, style = Label, letterSpacing = 0.1.sp, maxLines = 1, softWrap = false)
             // 24 sp is the design size; longer words than the design's shrink to stay on one line.
-            val size = when { t.value.length <= 5 -> 24.sp; t.value.length == 6 -> 20.sp; else -> 15.sp }
+            val size = when { t.value.length <= 5 -> 24.sp; t.value.length == 6 -> 19.sp; else -> 14.sp }
             Text(t.value, color = valueColor, fontSize = size, fontWeight = FontWeight.Bold, lineHeight = 26.sp, maxLines = 1, softWrap = false)
             if (t.detail.isNotEmpty()) Text(t.detail, color = if (bad) Pressed else SystemText, fontSize = 11.sp, lineHeight = 13.sp, maxLines = 1)
         }

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Typography
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -18,11 +19,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.driverguardian.R
 
 // Palette and shapes from the Figma file (MHacks | AutoAI, "UI" section). Mockups: docs/design/figma/.
 internal val Main = Color(0xFF366DE1) // Menu main
@@ -41,11 +47,30 @@ internal val GoodTint = Color(0xFFE5F5EA)
 internal val BadTint = Color(0xFFFDE8E8)
 internal val ScreenBg = Brush.verticalGradient(listOf(Color(0xFFF3F8FE), Color(0xFFECF4FE)))
 internal val CardShape = RoundedCornerShape(20.dp)
-internal val Label = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, lineHeight = 15.sp, letterSpacing = 0.5.sp)
-internal val ScreenTitle = TextStyle(fontSize = 28.sp, fontWeight = FontWeight.Bold, lineHeight = 34.sp, color = Ink)
-internal val SectionTitleStyle = TextStyle(fontSize = 19.sp, fontWeight = FontWeight.Bold, lineHeight = 24.sp, color = Ink)
+/** Inter (SIL Open Font License, frontend/third_party/inter/OFL.txt): one variable font file, a face per weight the app uses. */
+@OptIn(ExperimentalTextApi::class)
+internal val Inter = FontFamily(
+    listOf(FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold).map { w ->
+        Font(R.font.inter, weight = w, variationSettings = FontVariation.Settings(FontVariation.weight(w.weight)))
+    },
+)
+internal val Label = TextStyle(fontFamily = Inter, fontSize = 12.sp, fontWeight = FontWeight.Medium, lineHeight = 15.sp, letterSpacing = 0.5.sp)
+internal val ScreenTitle = TextStyle(fontFamily = Inter, fontSize = 28.sp, fontWeight = FontWeight.Bold, lineHeight = 34.sp, color = Ink)
+internal val SectionTitleStyle = TextStyle(fontFamily = Inter, fontSize = 19.sp, fontWeight = FontWeight.Bold, lineHeight = 24.sp, color = Ink)
 
 val DriverGuardianColors = lightColorScheme(primary = Main, surface = Surface, onSurface = OnSurface)
+
+/** Material's type scale in Inter, so buttons, text fields and plain Text all use it. */
+val DriverGuardianTypography = Typography().let { t ->
+    fun TextStyle.inter() = copy(fontFamily = Inter)
+    t.copy(
+        displayLarge = t.displayLarge.inter(), displayMedium = t.displayMedium.inter(), displaySmall = t.displaySmall.inter(),
+        headlineLarge = t.headlineLarge.inter(), headlineMedium = t.headlineMedium.inter(), headlineSmall = t.headlineSmall.inter(),
+        titleLarge = t.titleLarge.inter(), titleMedium = t.titleMedium.inter(), titleSmall = t.titleSmall.inter(),
+        bodyLarge = t.bodyLarge.inter(), bodyMedium = t.bodyMedium.inter(), bodySmall = t.bodySmall.inter(),
+        labelLarge = t.labelLarge.inter(), labelMedium = t.labelMedium.inter(), labelSmall = t.labelSmall.inter(),
+    )
+}
 
 /** Shadow tint: the brand blue, strong enough to read as depth on the pale background. */
 internal val ShadowAmbient = Main.copy(alpha = 0.30f)

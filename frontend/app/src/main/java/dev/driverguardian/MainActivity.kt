@@ -33,6 +33,7 @@ import dev.driverguardian.net.Conn
 import dev.driverguardian.trip.TripController
 import dev.driverguardian.ui.DashcamScreen
 import dev.driverguardian.ui.DriverGuardianColors
+import dev.driverguardian.ui.DriverGuardianTypography
 import dev.driverguardian.ui.ContactsScreen
 import dev.driverguardian.ui.ScreenBg
 import dev.driverguardian.ui.TabBar
@@ -61,7 +62,7 @@ class MainActivity : ComponentActivity() {
         vm.onNavigate = { q ->
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=" + Uri.encode(q))).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
-        setContent { MaterialTheme(colorScheme = DriverGuardianColors) { Root() } }
+        setContent { MaterialTheme(colorScheme = DriverGuardianColors, typography = DriverGuardianTypography) { Root() } }
     }
 
     @Composable
