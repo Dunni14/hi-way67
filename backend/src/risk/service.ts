@@ -8,8 +8,13 @@ import { buildCard, type ReportCard } from "./card.ts";
 import { observe } from "./expression.ts";
 import { applyCard, applyFeedback, normalizeProfile, notifyThreshold } from "./profile.ts";
 import { defaultMults, dominantFactor } from "./score.ts";
-import type { RiskStore, TripRow } from "./store/types.ts";
-import { FACTORS, type Action, type Evaluation, type Factor, type Feedback, type SharingMode, type SignalWindow, type Tier, type TripContext, type TripStart, type WeightMults } from "./types.ts";
+import type { GpsSampleRow, RiskStore, TripRow } from "./store/types.ts";
+import { erraticGpsLevel, isStopped, speedingLevel, windowFeatures, motionBetween } from "../gps/features.ts";
+import { advanceMotion, initialMotion, type Motion, type MotionEvent } from "../gps/lifecycle.ts";
+import { buildGpsCard } from "../gps/route.ts";
+import { SpeedLimitProvider } from "../gps/speedLimit.ts";
+import { mpsToMph, type LocationFix } from "../gps/types.ts";
+import { FACTORS, type Action, type EngineWindow, type Evaluation, type Factor, type Feedback, type GpsSummary, type SharingMode, type SignalWindow, type Tier, type TripContext, type TripStart, type WeightMults } from "./types.ts";
 
 export class HttpError extends Error {
   constructor(readonly status: number, message: string) {
@@ -20,7 +25,21 @@ export class HttpError extends Error {
 const GRADES = ["A", "B", "C", "D"] as const;
 const WINDOW_S = 10;
 
-type Runtime = { state: EngineState; ctx: TripContext };
+type Runtime = { state: EngineState; ctx: TripContext; motion: Motion };
+
+/** Handed to in-process consumers (the orchestrator) next to each evaluation. Never part of an HTTP response. */
+export type EvaluationExtra = {
+  /** Last good fix of this window, if any. */
+  location: LocationFix | null;
+  /** The driver's location-sharing setting. Anything bound for Photon must honor it. */
+  shareLocation: boolean;
+  /** Trip lifecycle changes detected from GPS on this window. */
+  lifecycle: MotionEvent[];
+  /** The adaptive-recommendation bandit's pick for a tier 1 or 2 voice action. */
+  intervention?: Intervention;
+};
+
+const r1 = (n: number) => Math.round(n * 10) / 10;
 
 export class RiskService {
   private runtimes = new Map<string, Runtime>();
@@ -30,13 +49,15 @@ export class RiskService {
     private store: RiskStore,
     private cfg: RiskConfig = riskConfig,
     /** Optional hook for in-process consumers (the orchestrator). Failures never affect the response. */
-    private onEvaluation?: (tripId: string, ev: Evaluation, intervention?: Intervention) => void | Promise<void>,
+    private onEvaluation?: (tripId: string, ev: Evaluation, extra: EvaluationExtra) => void | Promise<void>,
     /** Optional adaptive-recommendation layer (needs TIGER_DATABASE_URL). Never changes tiers or actions. */
     private bandit?: BanditService,
+    /** Posted-limit lookup. Tests inject one with a fake Overpass. */
+    private limits: SpeedLimitProvider = new SpeedLimitProvider(cfg),
   ) {}
 
   async startTrip(body: TripStart & { sharing_mode?: SharingMode }) {
-    await this.store.upsertDriver(body.driver_id, body.sharing_mode);
+    await this.store.upsertDriver(body.driver_id, body.sharing_mode, body.share_location);
     const id = randomUUID();
     await this.store.createTrip({
       id,
@@ -69,11 +90,19 @@ export class RiskService {
     rt.ctx.sharingOn = driver?.sharingMode !== "never";
 
     const hadBaseline = rt.state.baseline != null;
-    const { evaluation, state } = processWindow(rt.state, { ...w, ts }, rt.ctx, this.cfg, mults, threshold);
-    const stored = await this.store.addWindow({ tripId, ts, raw: { ...w, ts }, result: evaluation, score: evaluation.score, tier: evaluation.tier });
+    const g = this.gpsStep(tripId, w, rt);
+    const { gps: _fixes, ...client } = w;
+    const win: EngineWindow = { ...client, ts, ...g?.fields };
+    const { evaluation, state } = processWindow(rt.state, win, rt.ctx, this.cfg, mults, threshold);
+    if (g) evaluation.gps = g.summary;
+    const stored = await this.store.addWindow({ tripId, ts, raw: win, result: evaluation, score: evaluation.score, tier: evaluation.tier });
     if (!stored) throw new HttpError(409, "duplicate window ts");
     rt.state = state;
-    await this.store.addObservation({ tripId, ...observe({ ...w, ts }, this.cfg) });
+    if (g) {
+      rt.motion = g.motion;
+      await this.store.addGpsSamples(tripId, g.samples);
+    }
+    await this.store.addObservation({ tripId, ...observe(win, this.cfg) });
 
     if (!hadBaseline && state.baseline) await this.store.setBaseline(tripId, state.baseline);
     if (evaluation.actions.some((a) => a !== "none")) {
@@ -85,11 +114,14 @@ export class RiskService {
       });
     }
     const rec = this.bandit ? await this.recommend(trip, evaluation, ts) : {};
+    const extra: EvaluationExtra = { location: g?.location ?? null, shareLocation: driver?.shareLocation ?? true, lifecycle: g?.events ?? [], intervention: rec.intervention };
     try {
-      void Promise.resolve(this.onEvaluation?.(tripId, evaluation, rec.intervention)).catch((e) => console.error("[risk] onEvaluation:", e));
+      void Promise.resolve(this.onEvaluation?.(tripId, evaluation, extra)).catch((e) => console.error("[risk] onEvaluation:", e));
     } catch (e) {
       console.error("[risk] onEvaluation:", e);
     }
+    // Stopped long enough: the trip ends itself, which writes the report card.
+    if (g?.events.includes("ended")) await this.endTrip(tripId);
     return { ...evaluation, ...rec };
   }
 
@@ -105,6 +137,50 @@ export class RiskService {
     }
   }
 
+  /**
+   * GPS for one window: features, posted limit (cache or last known, never a wait), speeding and erratic
+   * levels, trip start/stop detection and the rows for gps_samples. Null for a legacy payload without
+   * a `gps` field. Reads and returns state; the caller commits `motion` once the window is stored.
+   */
+  private gpsStep(tripId: string, w: SignalWindow, rt: Runtime) {
+    if (w.gps === undefined) return null;
+    const cfg = this.cfg;
+    const f = windowFeatures(w.gps?.fixes ?? [], cfg);
+    const heading = f.last && f.last.speed_mps >= cfg.gps.headingMinSpeedMps ? f.last.heading_deg : null;
+    const limit = f.last ? this.limits.lookup(tripId, f.last.lat, f.last.lon, heading) : { limit_mps: null, source: "none" as const };
+    const m = advanceMotion(rt.motion, f.good, cfg);
+    const stopped = isStopped(f, cfg);
+
+    const fields: Partial<EngineWindow> = {
+      gps_speeding: stopped ? 0 : speedingLevel(f.speed_mps, limit.limit_mps, f.gps_ok, cfg),
+      gps_erratic: stopped ? 0 : erraticGpsLevel(f, cfg),
+      gps_stopped: stopped,
+      limit_source: limit.source,
+      speed_limit_mph: limit.limit_mps == null ? null : r1(mpsToMph(limit.limit_mps)),
+    };
+    // GPS speed fills the existing speed input when it is trustworthy; otherwise the phone's value stays.
+    if (f.gps_ok && f.speed_mps != null) fields.speed_mph = r1(mpsToMph(f.speed_mps));
+
+    const summary: GpsSummary = {
+      ok: f.gps_ok,
+      speed_mps: f.speed_mps == null ? null : Math.round(f.speed_mps * 100) / 100,
+      limit_mph: limit.limit_mps == null ? null : Math.round(mpsToMph(limit.limit_mps)),
+      limit_source: limit.source,
+      stopped,
+      moving: m.state.phase === "moving",
+      ...(m.events.includes("ended") ? { trip_ended: true } : {}),
+    };
+    const samples: GpsSampleRow[] = f.good.map((fix, i) => {
+      const mv = i > 0 ? motionBetween(f.good[i - 1]!, fix, cfg) : null;
+      return {
+        time: fix.t, lat: fix.lat, lon: fix.lon, speedMps: fix.speed_mps, headingDeg: fix.heading_deg, hAccuracyM: fix.h_accuracy_m,
+        accelMps2: mv?.accel ?? null, headingRateDps: mv?.headingRate ?? null, limitMps: limit.limit_mps, limitSource: limit.source,
+      };
+    });
+    const location: LocationFix | null = f.last ? { ms: f.last.ms, lat: f.last.lat, lon: f.last.lon, speed_mps: f.last.speed_mps, heading_deg: f.last.heading_deg } : null;
+    return { fields, summary, motion: m.state, events: m.events, samples, location };
+  }
+
   /** Active-trip runtime; after a restart it is rebuilt by replaying stored windows (the core is deterministic). */
   private async runtime(trip: TripRow, sharing: SharingMode | undefined, mults: WeightMults, threshold: number): Promise<Runtime> {
     const hit = this.runtimes.get(trip.id);
@@ -112,7 +188,11 @@ export class RiskService {
     const ctx: TripContext = { kidsInCar: trip.kidsInCar, lowExperience: trip.lowExperience, sleepHours: trip.sleepHours, sharingOn: sharing !== "never" };
     let state = initialState();
     for (const row of await this.store.getWindows(trip.id)) state = processWindow(state, row.raw, ctx, this.cfg, mults, threshold).state;
-    const rt = { state, ctx };
+    // Motion state is rebuilt from the stored fixes the same way.
+    const fixes = (await this.store.getGpsSamples(trip.id)).map((r) => ({
+      ms: Date.parse(r.time), t: r.time, lat: r.lat, lon: r.lon, speed_mps: r.speedMps ?? 0, heading_deg: r.headingDeg, h_accuracy_m: r.hAccuracyM ?? 0,
+    }));
+    const rt: Runtime = { state, ctx, motion: advanceMotion(initialMotion(), fixes, this.cfg).state };
     this.runtimes.set(trip.id, rt);
     return rt;
   }
@@ -147,6 +227,7 @@ export class RiskService {
     if (first) await this.store.endTrip(tripId, new Date().toISOString());
     this.runtimes.delete(tripId);
     this.chains.delete(tripId);
+    this.limits.forget(tripId);
     // The card is written once, when the trip first ends, and is what moves the driver's profile.
     let stored = await this.store.getCard(tripId);
     if (!stored) {
@@ -203,18 +284,20 @@ export class RiskService {
   }
 
   private async buildTripCard(trip: TripRow): Promise<ReportCard> {
-    const [windows, observations, events, driver, feedback] = await Promise.all([
+    const [windows, observations, events, driver, feedback, samples] = await Promise.all([
       this.store.getWindows(trip.id),
       this.store.getObservations(trip.id),
       this.store.getEvents(trip.id),
       this.store.getDriver(trip.driverId),
       this.store.feedbackCounts(trip.id),
+      this.store.getGpsSamples(trip.id),
     ]);
     return buildCard(windows, observations, { kidsInCar: trip.kidsInCar, lowExperience: trip.lowExperience }, this.cfg, {
       events,
       baselineHr: trip.baseline?.heartRate ?? null,
       sharingMode: driver?.sharingMode ?? null,
       feedback,
+      gps: buildGpsCard(samples, events),
     });
   }
 

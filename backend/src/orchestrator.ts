@@ -5,7 +5,7 @@ import type { TripStore } from "./trip/store.ts";
 import type { PhoneMsg, Tier, Dominant } from "./ws/protocol.ts";
 import { sendToPhone } from "./ws/server.ts";
 import { driverQueue } from "./voice/driverQueue.ts";
-import { ackLine, alertLine, ASKS_REST_STOP, gradeOf, interventionLine, messageLine, permissionLine, roastLine } from "./voice/lines.ts";
+import { ackLine, alertLine, ASKS_REST_STOP, gradeOf, interventionLine, messageLine, permissionLine, roastLine, speedingNudge } from "./voice/lines.ts";
 import { post, dm, type Inbound } from "./agent/spectrum.ts";
 import { classify, shortenForSpeech } from "./agent/classifier.ts";
 import { answerQuestion } from "./agent/answer.ts";
@@ -13,14 +13,15 @@ import { parseDriverUtterance } from "./agent/driverIntent.ts";
 import { roast } from "./agent/roast.ts";
 import { allContacts } from "./agent/contacts.ts";
 import type { Evaluation } from "./risk/types.ts";
-import type { RiskService } from "./risk/service.ts";
+import type { EvaluationExtra, RiskService } from "./risk/service.ts";
+import { RestStopFinder, milesAhead } from "./gps/restStop.ts";
 import { riskConfig } from "./risk/config.ts";
-import type { Intervention } from "./bandit/service.ts";
+import type { LocationFix } from "./gps/types.ts";
 import { config } from "./config.ts";
 
 const LISTEN_MS = 5000;
 
-export function createOrchestrator(store: TripStore) {
+export function createOrchestrator(store: TripStore, restStops = new RestStopFinder(riskConfig)) {
   const d = () => trip.driverName;
   let pendingPermission: { dominant: Dominant } | null = null;
   // Extra facts for chat answers (what the bandit has learned); set once the risk service exists.
@@ -47,12 +48,14 @@ export function createOrchestrator(store: TripStore) {
         if (msg.driverName) trip.driverName = msg.driverName;
         trip.sharingMode = msg.sharingMode;
         trip.kidsInCar = msg.kidsInCar;
+        trip.shareLocation = msg.shareLocation;
         console.log(`[phone] hello: ${trip.driverName}, sharing=${trip.sharingMode}, kids=${trip.kidsInCar}`);
         return;
 
       case "settings":
         if (msg.sharingMode) trip.sharingMode = msg.sharingMode;
         if (msg.kidsInCar !== undefined) trip.kidsInCar = msg.kidsInCar;
+        if (msg.shareLocation !== undefined) trip.shareLocation = msg.shareLocation;
         return;
 
       case "trip_start":
@@ -160,13 +163,40 @@ export function createOrchestrator(store: TripStore) {
    * to once per 10 min, or the permission question when sharing is off).
    * No bump again here.
    */
-  async function onRiskEvaluation(ev: Evaluation, intervention?: Intervention) {
+  async function onRiskEvaluation(ev: Evaluation, extra?: EvaluationExtra) {
+    if (extra) {
+      trip.shareLocation = extra.shareLocation;
+      if (extra.location) trip.setFix(extra.location);
+      // GPS decided the trip started moving or stopped for good.
+      if (extra.lifecycle.includes("started")) await onTripStart();
+      if (extra.lifecycle.includes("ended")) await onTripEnd();
+    }
+    const fix = extra?.location ?? trip.lastFix;
+    // Warm the rest stop cache while the driver is only mildly drowsy, so tier 2 and 3 can name a stop without waiting.
+    if (ev.dominant === "drowsy" && ev.tier >= 1 && fix) void restStops.next(fix);
+
     if (ev.tier === 0) return;
     const voice = ev.actions.some((a) => a.startsWith("voice_"));
     const notify = ev.actions.includes("notify_contacts") ? "notify" : ev.actions.includes("ask_permission_to_notify") ? "ask" : "none";
     if (!voice && notify === "none") return;
     const tier: Tier = ev.tier === 3 ? 85 : ev.tier === 2 ? 70 : 40;
-    await onAlert(tier, ev.dominant, ev.score, { bumped: true, voice, notify, intervention: intervention?.id });
+    await onAlert(tier, ev.dominant, ev.score, {
+      bumped: true,
+      voice,
+      notify,
+      intervention: extra?.intervention?.id,
+      speedingLine: speedingNudge(ev),
+      restMiles: voice && ev.dominant === "drowsy" && tier >= 70 ? await restMilesAhead(fix) : null,
+    });
+  }
+
+  /** Miles to the next stop ahead, from the cache or a short wait; null when unknown. The alert never waits long for it. */
+  async function restMilesAhead(fix: LocationFix | null): Promise<number | null> {
+    if (!fix) return null;
+    let timer: NodeJS.Timeout | undefined;
+    const limit = new Promise<null>((resolve) => (timer = setTimeout(() => resolve(null), riskConfig.gps.restStop.timeoutMs / 2)));
+    const stop = await Promise.race([restStops.next(fix), limit]).finally(() => clearTimeout(timer));
+    return stop ? milesAhead(stop) : null;
   }
 
   type AlertOpts = {
@@ -177,6 +207,10 @@ export function createOrchestrator(store: TripStore) {
     notify?: "notify" | "ask" | "none";
     /** Bandit intervention id: replaces the generic line for tier 1/2. */
     intervention?: string;
+    /** GPS speeding line for a tier 1 reckless nudge (voice/lines.ts speedingNudge). */
+    speedingLine?: string | null;
+    /** Miles to the next rest stop for a drowsy tier 2/3 line. */
+    restMiles?: number | null;
   };
 
   async function onAlert(phoneTier: Tier, dominant: Dominant, R: number, opts: AlertOpts = {}) {
@@ -191,7 +225,10 @@ export function createOrchestrator(store: TripStore) {
       // Mid-tier: voice only, never the group chat.
       if (!voice) return;
       const id = opts.intervention;
-      const line = (id && interventionLine(id, { grade: gradeOf(trip.maxR) })) || alertLine(tier, dominant);
+      const line =
+        (id && interventionLine(id, { grade: gradeOf(trip.maxR) })) ||
+        (tier === 40 && dominant === "reckless" && opts.speedingLine) ||
+        alertLine(tier, dominant, { restMiles: opts.restMiles });
       driverQueue.enqueue({
         text: line,
         tier,
@@ -204,7 +241,7 @@ export function createOrchestrator(store: TripStore) {
       return;
     }
 
-    if (voice) driverQueue.enqueue({ text: alertLine(85, dominant), tier: 85, context: "checkin", listenAfterMs: 0, priority: true });
+    if (voice) driverQueue.enqueue({ text: alertLine(85, dominant, { restMiles: opts.restMiles }), tier: 85, context: "checkin", listenAfterMs: 0, priority: true });
     const notify = opts.notify ?? (trip.sharingMode === "never" ? "ask" : "notify");
     if (notify === "ask") {
       pendingPermission = { dominant };
@@ -218,8 +255,9 @@ export function createOrchestrator(store: TripStore) {
     trip.lastHighAlertAt = Date.now();
     // The alert goes to the whole chat; the location only to guardians.
     await post(`⚠️ ${d()} is at high risk (${dominant}). I've told them to pull over.`).catch(logPostError);
-    const link = trip.mapsLink();
-    if (link) await post(`📍 ${d()}'s location: ${link}`, "guardian").catch(logPostError);
+    await trip.resolvePlace(); // road and city for the text; falls back to the link alone
+    const where = trip.locationText();
+    if (where) await post(`📍 ${d()}'s location:\n${where}`, "guardian").catch(logPostError);
     if (dominant === "drowsy" && !roast.active) {
       roast.start();
       await post(roast.callText()).catch(logPostError);

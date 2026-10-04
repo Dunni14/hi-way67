@@ -75,7 +75,7 @@ if (riskStore) {
     await banditStore.migrate();
     bandit = new BanditService(banditStore, undefined, () => Boolean(config.elevenLabs.familyVoiceId));
   }
-  const riskService = new RiskService(riskStore, undefined, (_tripId, ev, intervention) => onRiskEvaluation(ev, intervention), bandit);
+  const riskService = new RiskService(riskStore, undefined, (_tripId, ev, extra) => onRiskEvaluation(ev, extra), bandit);
   // The driver id the phone sends to the REST API is the driver's name.
   if (bandit) setInsights(async () => policyFacts(trip.driverName, await riskService.driverPolicy(trip.driverName)));
   setRisk(riskService);

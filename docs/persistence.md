@@ -12,14 +12,15 @@ The risk engine REST API (`src/risk/`) persists to Postgres through `PgRiskStore
 |---|---|---|
 | `windows` | Raw 10 s signals and computed levels, score, tier | 7 days (privacy), compressed after 1 day |
 | `observations` | One expression label per window and the facial cues behind it | 7 days, compressed after 1 day |
+| `gps_samples` | Raw GPS fixes of an active trip ([gps.md](gps.md)) | 7 days |
 | `events` | Every window where the tree fired an action | Forever |
 | `decision_log` | Action, 8-number context, threshold used, feedback reward | Forever, compressed after 7 days |
 | `report_cards` | One row per ended trip: score, grade, tier seconds, distance, speed and limit stats, counts, expression, interventions, driver profile before and after, `card` JSONB, 30 s `series`, `features` vector | Forever |
 | `trips`, `drivers` | Trip context and baselines; sharing mode, weight multipliers, `profile` | Forever |
-| `windows_30s`, `trip_summary_5m` | Continuous aggregates | Forever (they refresh inside the raw retention) |
+| `windows_30s`, `trip_summary_5m`, `gps_10s` | Continuous aggregates | Forever (they refresh inside the raw retention). `gps_10s` keeps a last latitude and longitude per 10 s bucket |
 | `driver_scorecard` (view) | Trips scored, average score (all time and 30 days), night trips, distance, time | Computed from `report_cards` |
 
-Because raw windows expire after a week, **a trip's report must not depend on them**. At trip end the card stores its own 30 s series and metrics, and `GET /trips/{id}/report` and `/drivers/{id}/trips` fall back to them once `windows` is empty. Not stored anywhere: location, routes, video or face geometry, contact names or numbers.
+Because raw windows expire after a week, **a trip's report must not depend on them**. At trip end the card stores its own 30 s series and metrics, and `GET /trips/{id}/report` and `/drivers/{id}/trips` fall back to them once `windows` is empty. The card's `gps` field (route, alert markers, limit stats) is part of the stored `card` JSONB, so a trip's route is kept after the raw fixes expire. Not stored anywhere: video, face geometry, contact names or numbers.
 
 **Checking an instance.** `npm run smoke:tiger` (needs `TIGER_DATABASE_URL`) runs a throwaway trip through windows, bandit, trip end and the card, then deletes its rows. With `DATABASE_URL` set, `npm test` also runs `risk/tiger.live.test.ts` against the instance (hypertables, policies, a full trip, report after the raw windows are dropped).
 

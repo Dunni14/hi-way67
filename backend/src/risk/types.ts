@@ -1,6 +1,7 @@
 // Shared types and request schemas for the risk engine. Field names are our own
 // internal schema; the client maps Presage SDK output into it.
 import { z } from "zod";
+import { GpsPayload, type LimitSource } from "../gps/types.ts";
 
 const num = z.number().nullish();
 
@@ -20,14 +21,36 @@ export const SignalWindow = z.object({
   swerves: num,
   speed_mph: num,
   speed_limit_mph: num,
+  /**
+   * Phone GPS fixes for this window. Absent: legacy payload, `speed_mph` / `speed_limit_mph` are used as
+   * sent. `null` (permission denied, no fix) or present: GPS is authoritative and `speeding` is 0 unless
+   * there are enough good fixes and a known limit.
+   */
+  gps: GpsPayload.nullish(),
 });
 export type SignalWindow = z.infer<typeof SignalWindow>;
+
+/**
+ * What the pure core scores: the client window with `gps` reduced by the service to the levels it
+ * feeds. These are stored with the window (not the raw fixes) so a restart can replay them.
+ */
+export type EngineWindow = Omit<SignalWindow, "gps"> & {
+  /** 0..1 speeding level from GPS speed against the posted limit. Set whenever the client sent `gps`. */
+  gps_speeding?: number | null;
+  /** 0..1 erratic level from GPS acceleration and heading change. */
+  gps_erratic?: number | null;
+  /** Good GPS and under the stop speed: speeding and erratic are not scored. */
+  gps_stopped?: boolean | null;
+  limit_source?: LimitSource | null;
+};
 
 export const TripStart = z.object({
   driver_id: z.string().min(1),
   kids_in_car: z.boolean().default(false),
   low_experience: z.boolean().default(false),
   sleep_hours: z.number().nullish(),
+  /** Location sharing with contacts. Omitted keeps the driver's stored choice (default on). */
+  share_location: z.boolean().optional(),
 });
 export type TripStart = z.infer<typeof TripStart>;
 
@@ -56,6 +79,21 @@ export type Evaluation = {
   levels: Levels;
   override: Override | null;
   degraded: boolean;
+  /** Present when the window carried a `gps` field. No coordinates: the phone already has those. */
+  gps?: GpsSummary;
+};
+
+export type GpsSummary = {
+  ok: boolean;
+  speed_mps: number | null;
+  limit_mph: number | null;
+  limit_source: LimitSource;
+  /** Stopped, so speeding and erratic were not scored. */
+  stopped: boolean;
+  /** Set once the trip has been moving (speed above the start speed long enough). */
+  moving: boolean;
+  /** The trip ended itself on this window (speed under the stop speed long enough); send no more windows. */
+  trip_ended?: boolean;
 };
 
 /** Trip-level context set at trip start. */

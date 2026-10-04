@@ -102,6 +102,47 @@
     "minWindows": 12,
     "fullConfidenceWindows": 60
   },
+  "gps": {
+    "speedingOverFull": 0.3,
+    "accuracyMaxM": 30,
+    "minGoodFixes": 3,
+    "headingMinSpeedMps": 3,
+    "erratic": {
+      "accelLow": 2.5,
+      "accelFull": 5,
+      "headingLow": 20,
+      "headingFull": 45
+    },
+    "fallbackLimitsMph": {
+      "motorway": 70,
+      "trunk": 55,
+      "primary": 55,
+      "secondary": 45,
+      "tertiary": 45,
+      "residential": 25,
+      "unclassified": 25
+    },
+    "trip": {
+      "startSpeedMps": 4,
+      "startHoldS": 20,
+      "stopSpeedMps": 1,
+      "stopHoldS": 300
+    },
+    "lookup": {
+      "radiusM": 25,
+      "timeoutMs": 6000,
+      "cacheMax": 5000,
+      "cacheTtlS": 86400,
+      "failureBackoffS": 30,
+      "maxInflight": 2
+    },
+    "restStop": {
+      "radiusKm": 15,
+      "coneDeg": 60,
+      "timeoutMs": 3000
+    },
+    "staleFixS": 60
+  },
   "adaptive": {
     "careNeutral": 75,
     "careAlpha": 0.3,

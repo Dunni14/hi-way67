@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- MaterialCardView and BottomNavigationView need a Material theme; the Presage MainActivity keeps its AppCompat theme. -->
+    <style name="Theme.Drive" parent="Theme.Material3.Light.NoActionBar">
+        <item name="android:windowBackground">@color/drive_bg</item>
+        <item name="colorPrimary">@color/drive_good</item>
+    </style>
+
+    <style name="Drive.Label" parent="">
+        <item name="android:textSize">@dimen/drive_text_label</item>
+        <item name="android:textColor">@color/drive_label</item>
+    </style>
+
+    <style name="Drive.Value" parent="">
+        <item name="android:textSize">@dimen/drive_text_value</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textAllCaps">true</item>
+    </style>
+</resources>

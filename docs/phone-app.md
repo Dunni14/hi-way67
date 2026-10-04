@@ -32,14 +32,14 @@ There is no networking (the `INTERNET` permission is only used by Presage), scor
 | # | Responsibility | Status |
 |---|---|---|
 | 1 | Full-screen dashcam view, front camera facing the driver, no touch needed while driving | Partial: full-screen preview exists; no driver-facing UI yet |
-| 2 | Presage: blinks, eye closure, head pose and nods, expression, HR, HRV, breathing, confidence | Partial: HR, blinking, talking, expression and landmarks read and displayed; eye/mouth ratios computed; no yawn or nod events; HRV and breathing unused |
+| 2 | Presage: blinks, eye closure, head pose and nods, expression, HR, HRV, breathing, confidence | Partial. HR, breathing, a blink-based eye closure share, stress from expression and face visibility go into each Drive screen window; see [drive-screen.md](drive-screen.md#presage). No yawns, nods, gaze or microsleep yet |
 | 3 | 60 s baseline at trip start; score signals as deviation from it | Not started |
 | 4 | 10 s rolling average; drop low-confidence frames and mark them missing | Partial: validation status handled; no averaging, confidence not used to filter |
 | 5 | Feature vector **x** (13 features, each 0..1) every 10 s | Not started |
 | 6 | Drowsy and reckless weight vectors → `r`, multiplier `m` (context × speed), `R = clamp(100·r·m)` | Not started |
 | 7 | Decision tree | Moved to the backend risk engine (the phone sends raw signals; see [architecture.md](architecture.md#who-owns-the-decision-tree)) |
 | 8 | GPS speed and location; IMU hard-brake and swerve detection | Not started |
-| 9 | WebSocket client: `hello` on connect, `risk_window` every 10 s, `alert`, `settings`, `trip_start` / `trip_end` | Not started |
+| 9 | WebSocket client: `hello` on connect, `risk_window` every 10 s, `alert`, `settings`, `trip_start` / `trip_end` | Not started. The Drive screen uses the REST path instead (`POST /trips`, `/windows`, `/end`), see [drive-screen.md](drive-screen.md#backend-link). The WebSocket is still needed for `speak` / `utterance` |
 | 10 | Play `speak.audio` (base64 mp3), or on-device TTS when it is empty | Not started |
 | 11 | Listen for `listenAfterMs` after a `speak`, send `utterance` with the same `context`, then `speak_done` | Not started |
 | 12 | `navigate` → open maps searching "rest stop" | Not started |

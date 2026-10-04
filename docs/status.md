@@ -107,6 +107,11 @@ The tree is split between phone and backend. See [architecture.md](architecture.
 |---|---|---|
 | GPS speed | Built | Frontend `MotionSource` (demo mode fakes 65 mph). |
 | Speed vs. fixed demo limit | Built | `speed_over_limit` feature. |
+| GPS speed and location | Done (backend), phone not started | `gps` field on the 10 s window feeds `speeding` and `erratic`; location goes into the tier 3 alert and guardian answers. See [gps.md](gps.md). The legacy `risk_window` `lat`/`lon` still works. |
+| Speed vs. posted limit | Done (backend) | OpenStreetMap through Overpass, cached, never blocks scoring, hand-set fallback by road class (flagged in the report card). Not measured on a real drive yet. |
+| Trip start/stop from GPS | Done (backend) | 4 m/s for 20 s starts, under 1 m/s for 5 min ends the trip. |
+| Rest stop and limit in voice lines, route on the report card | Done (backend) | `voice/lines.ts`, `card.gps`. |
+| GPS DDL on Tiger | Not applied | `gps_samples`, `gps_10s` and the retention policy are in `sql/01_schema.sql`, tested on plain Postgres only. Re-run both SQL files on the service. |
 | Open-Meteo weather | Not started | |
 | Night-time driving | Built | `night_time` feature on the phone; the backend also uses 22:00–05:00 for the late-night trip note. |
 | `surroundings_risk` feature | Not started | |

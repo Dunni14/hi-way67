@@ -4,12 +4,13 @@
 // observations retention. Every statement is idempotent. Run one at a time: continuous aggregates
 // cannot be created inside a transaction block.
 //
-// Retention: raw vitals (`windows`) and facial cues (`observations`) are dropped after 7 days. Trips,
+// Retention: raw vitals (`windows`), facial cues (`observations`) and raw GPS fixes (`gps_samples`) are dropped after 7 days. Trips,
 // events, report cards, the decision log and the continuous aggregates stay.
 export const TIMESCALE_SQL: string[] = [
   `SELECT create_hypertable('windows', 'ts', chunk_time_interval => INTERVAL '1 day', if_not_exists => TRUE, migrate_data => TRUE)`,
   `SELECT create_hypertable('events', 'ts', chunk_time_interval => INTERVAL '7 days', if_not_exists => TRUE, migrate_data => TRUE)`,
   `SELECT create_hypertable('observations', 'ts', chunk_time_interval => INTERVAL '1 day', if_not_exists => TRUE, migrate_data => TRUE)`,
+  `SELECT create_hypertable('gps_samples', 'time', chunk_time_interval => INTERVAL '1 day', if_not_exists => TRUE, migrate_data => TRUE)`,
   `SELECT create_hypertable('decision_log', 'ts', chunk_time_interval => INTERVAL '7 days', if_not_exists => TRUE, migrate_data => TRUE)`,
 
   `CREATE MATERIALIZED VIEW IF NOT EXISTS windows_30s
@@ -31,7 +32,17 @@ export const TIMESCALE_SQL: string[] = [
   `SELECT add_continuous_aggregate_policy('trip_summary_5m', start_offset => INTERVAL '1 hour',
      end_offset => INTERVAL '5 minutes', schedule_interval => INTERVAL '5 minutes', if_not_exists => TRUE)`,
 
+  `CREATE MATERIALIZED VIEW IF NOT EXISTS gps_10s
+   WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
+   SELECT time_bucket(INTERVAL '10 seconds', time) AS bucket, trip_id, driver_id,
+     avg(speed_mps) AS speed_avg_mps, max(speed_mps) AS speed_max_mps, max(accel_mps2) AS accel_max_mps2,
+     max(heading_rate_dps) AS heading_rate_dps, last(lat, time) AS lat, last(lon, time) AS lon, count(*) AS fixes
+   FROM gps_samples GROUP BY bucket, trip_id, driver_id WITH NO DATA`,
+  `SELECT add_continuous_aggregate_policy('gps_10s', start_offset => INTERVAL '10 minutes',
+     end_offset => INTERVAL '10 seconds', schedule_interval => INTERVAL '10 seconds', if_not_exists => TRUE)`,
+
   `SELECT add_retention_policy('windows', INTERVAL '7 days', if_not_exists => TRUE)`,
+  `SELECT add_retention_policy('gps_samples', INTERVAL '7 days', if_not_exists => TRUE)`,
   `SELECT add_retention_policy('observations', INTERVAL '7 days', if_not_exists => TRUE)`,
 
   `ALTER TABLE windows SET (timescaledb.compress, timescaledb.compress_segmentby = 'trip_id', timescaledb.compress_orderby = 'ts DESC')`,

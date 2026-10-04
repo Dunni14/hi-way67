@@ -10,6 +10,7 @@
 // for attention (max of distracted, phone), speed, smoothness (erratic), alertness (drowsy) and
 // composure (agitated). Confidence is scoredWindows / fullConfidenceWindows, capped at 1.
 import type { RiskConfig } from "./config.ts";
+import type { GpsCard } from "../gps/route.ts";
 import { EXPRESSIONS, type Expression, type Observation } from "./expression.ts";
 import type { Action, Evaluation, Override, SignalWindow, Tier } from "./types.ts";
 
@@ -21,6 +22,8 @@ export type CardExtra = {
   baselineHr?: number | null;
   sharingMode?: string | null;
   feedback?: { confirmed: number; false_alarm: number };
+  /** Route, alert markers and limit stats from the trip's GPS fixes; null when there were none. */
+  gps?: GpsCard | null;
 };
 
 const WINDOW_S = 10;
@@ -41,6 +44,8 @@ export type ReportCard = {
   categories: Record<Category, number>;
   expression: { shares: Record<Expression, number>; dominant: Expression | null };
   counts: { hard_brakes: number; swerves: number; phone_windows: number; speeding_windows: number };
+  /** Route, alert markers and limit stats; null when the trip had no GPS. Not part of `features`. */
+  gps: GpsCard | null;
   /** Fixed-order numeric vector for offline learning; names in `feature_names`. */
   features: number[];
   feature_names: string[];
@@ -204,6 +209,7 @@ export function buildCard(windows: CardWindow[], observations: Observation[], ct
       phone_windows: scored.filter((w) => w.raw.phone_in_hand).length,
       speeding_windows: scored.filter((w) => w.result.levels.speeding > 0).length,
     },
+    gps: extra.gps ?? null,
     features,
     feature_names: FEATURE_NAMES,
     metrics: buildMetrics(windows, scored, extra),

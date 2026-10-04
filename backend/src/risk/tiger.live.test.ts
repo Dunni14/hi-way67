@@ -88,7 +88,8 @@ test("continuous aggregates roll the trip up", { skip }, async () => {
 test("retention and aggregate policies are installed", { skip }, async () => {
   const { rows } = await pool.query(`SELECT proc_name, hypertable_name FROM timescaledb_information.jobs WHERE proc_name IN ('policy_retention', 'policy_refresh_continuous_aggregate')`);
   assert.ok(rows.some((r) => r.proc_name === "policy_retention" && r.hypertable_name === "windows"));
-  assert.equal(rows.filter((r) => r.proc_name === "policy_refresh_continuous_aggregate").length, 2);
+  assert.ok(rows.some((r) => r.proc_name === "policy_retention" && r.hypertable_name === "gps_samples"));
+  assert.equal(rows.filter((r) => r.proc_name === "policy_refresh_continuous_aggregate").length, 3); // windows_30s, trip_summary_5m, gps_10s
 });
 
 test("report-card tables are hypertables with the right policies", { skip }, async () => {

@@ -5,16 +5,16 @@ import type { RiskConfig } from "./config.ts";
 import { computeLevels } from "./levels.ts";
 import { defaultMults, scoreOf } from "./score.ts";
 import { baselineOf, smooth, type Baseline } from "./smoothing.ts";
-import type { Action, Evaluation, Levels, Override, SignalWindow, Tier, TripContext, WeightMults } from "./types.ts";
+import type { Action, Evaluation, Levels, Override, EngineWindow, Tier, TripContext, WeightMults } from "./types.ts";
 
 export type EngineState = {
   /** Last `smoothingWindows` raw windows. */
-  recent: SignalWindow[];
+  recent: EngineWindow[];
   /** Windows seen so far this trip. */
   count: number;
   baseline: Baseline | null;
   /** Raw windows collected while the baseline is being set. */
-  baselineAcc: SignalWindow[];
+  baselineAcc: EngineWindow[];
   /** Raw score tier of the previous scored window (for the 2-window hold). */
   prevRawTier: Tier;
   drowsyStreak: number;
@@ -46,7 +46,7 @@ const tierOfScore = (R: number, cfg: RiskConfig): Tier =>
 
 export function processWindow(
   prev: EngineState,
-  w: SignalWindow,
+  w: EngineWindow,
   ctx: TripContext,
   cfg: RiskConfig,
   mults: WeightMults = defaultMults(),
