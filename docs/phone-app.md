@@ -1,17 +1,35 @@
 # Android app
 
-**Status: Not started.** No Android code is in this repository. This page specifies what the app must do so it fits the backend that already exists. The design comes from the [root README](../README.md); the wire format is in [protocol.md](protocol.md).
+**Status: Partial (early prototype).** Code: [`android/`](../android). This page covers what the app does today and what it still needs in order to fit the backend. The design comes from the [root README](../README.md); the wire format is in [protocol.md](protocol.md). Build instructions: [`android/AGENTS.md`](../android/AGENTS.md).
 
-Planned stack: native Kotlin, Presage native SDK, Android `SpeechRecognizer`, installed over USB.
+Stack: native Kotlin, Presage SmartSpectra SDK 3.4.0, min SDK 28 / target 36, installed over USB. Planned additions: Android `SpeechRecognizer`, OkHttp (or similar) for the WebSocket.
+
+## Current state
+
+One activity, [`MainActivity.kt`](../android/app/src/main/java/com/example/coolvitals/MainActivity.kt), shows a full-screen front-camera preview with a status label on top.
+
+- **Startup:** asks for camera permission, then starts SmartSpectra with `cardioMetrics + breathingMetrics + faceMetrics`.
+- **Debug overlay:**
+  - a HUD with heart rate, eyes open or closed, % of the last 60 s with eyes closed, blinks per minute, talking, top expression, eye aspect ratio and mouth openness
+  - a face landmark mesh inset (`FaceMeshView`)
+  - a 60 s heart-rate graph (`SparklineView`)
+  
+  Eye and mouth ratios come from the landmarks in `FaceGeometry.kt`, assuming the MediaPipe 478-point layout. They're the starting point for yawn detection, but nothing thresholds them yet.
+- **Validation:** shows the SDK's hint when validation fails, and "Hold still, measuring..." until the first reading arrives.
+- **Errors:** logs SDK errors under the `SmartSpectra` tag and shows them on screen.
+- **Shutdown:** stops the SDK in `onDestroy`.
+- **API key:** the Presage key comes from `local.properties` via `BuildConfig.PRESAGE_API_KEY`.
+
+There is no networking (the `INTERNET` permission is only used by Presage), scoring, audio, speech or location yet.
 
 ## Responsibilities
 
 | # | Responsibility | Status |
 |---|---|---|
-| 1 | Full-screen dashcam view, front camera facing the driver, no touch needed while driving | Not started |
-| 2 | Presage: blinks, eye closure, head pose and nods, expression, HR, HRV, breathing, confidence | Not started |
+| 1 | Full-screen dashcam view, front camera facing the driver, no touch needed while driving | Partial: full-screen preview exists; no driver-facing UI yet |
+| 2 | Presage: blinks, eye closure, head pose and nods, expression, HR, HRV, breathing, confidence | Partial: HR, blinking, talking, expression and landmarks read and displayed; eye/mouth ratios computed; no yawn or nod events; HRV and breathing unused |
 | 3 | 60 s baseline at trip start; score signals as deviation from it | Not started |
-| 4 | 10 s rolling average; drop low-confidence frames and mark them missing | Not started |
+| 4 | 10 s rolling average; drop low-confidence frames and mark them missing | Partial: validation status handled; no averaging, confidence not used to filter |
 | 5 | Feature vector **x** (13 features, each 0..1) every 10 s | Not started |
 | 6 | Drowsy and reckless weight vectors → `r`, multiplier `m` (context × speed), `R = clamp(100·r·m)` | Not started |
 | 7 | Decision tree: tiers 40/70/85, dominant sub-score, 15 s hold, 2 min per-tier cooldown, 70 sustained 2 min → 85 | Not started |

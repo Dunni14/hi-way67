@@ -10,8 +10,9 @@ const SETTINGS: Record<Tier | 0, { stability: number; similarity_boost: number; 
   85: { stability: 0.25, similarity_boost: 0.85, style: 0.85 }, // urgent
 };
 
-export async function tts(text: string, tier: Tier | 0 = 0): Promise<Buffer> {
-  const { voiceId, modelId } = config.elevenLabs;
+export async function tts(text: string, tier: Tier | 0 = 0, voiceOverride?: string): Promise<Buffer> {
+  const { modelId } = config.elevenLabs;
+  const voiceId = voiceOverride || config.elevenLabs.voiceId;
   const res = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
     {

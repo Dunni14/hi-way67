@@ -9,11 +9,13 @@
     "smoke:tts": "tsx --env-file-if-exists=.env src/dev/smokeTts.ts",
     "dev:fake": "FAKE_DB=1 tsx watch --env-file-if-exists=.env src/index.ts",
     "seed:fake": "tsx src/dev/seedFake.ts",
+    "smoke:tiger": "tsx --env-file-if-exists=.env src/dev/tigerSmoke.ts",
     "fake-phone": "tsx --env-file-if-exists=.env src/dev/fakePhone.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/risk/*.test.ts"
+    "test": "tsx --test src/risk/*.test.ts src/bandit/*.test.ts"
   },
   "dependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@spectrum-ts/imessage": "^12.10.1",
     "@spectrum-ts/telegram": "^12.10.1",
     "pg": "^8.23.1",
@@ -22,7 +24,6 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.8",
     "@types/node": "^22",
     "@types/pg": "^8.23.1",
     "@types/ws": "^8.18.2",

@@ -2,7 +2,7 @@
 
 Technical documentation for the code in this repository. The product pitch, track list and demo script live in the [root README](../README.md); these pages describe what is **actually built**, how to run it, and what is still missing.
 
-> **Snapshot:** 2026-10-03, branch `rnoss`. Only the backend exists in the repo. The Android app described in the root README has not been committed yet, so every phone-side feature is listed as **Not started** below.
+> **Snapshot:** 2026-10-03. The backend is feature-complete for the demo, apart from persistence. The Android app is an early prototype: Presage face and heart data show in a debug overlay, but the app doesn't talk to the backend yet.
 
 ## Pages
 
@@ -27,7 +27,8 @@ Technical documentation for the code in this repository. The product pitch, trac
 | ElevenLabs tiered voice and driver speech queue | **Done** (backend side) |
 | Dev tools (`fake-phone`, `smoke:tts`) | **Done** |
 | Tiger Data persistence | **Stub**: in-memory only, lost on restart |
-| Android app (Presage, risk score, decision tree, GPS, STT, audio playback) | **Not started** (not in repo) |
+| Android app: Presage on the front camera | **Partial**: debug overlay with heart rate, blinks, expression, face mesh |
+| Android app: backend connection, risk score, decision tree, GPS, STT, audio playback | **Not started** |
 | "I'm fine" weight nudge | **Partial**: backend sends `dismissed`; the nudge itself belongs to the phone |
 | Pre-trip check, report card, surroundings/weather, alarm audio, Fetch.ai agent | **Not started** |
 
@@ -38,8 +39,11 @@ See [status.md](status.md) for the full breakdown.
 ```
 auto-ai/
 ├── README.md                    Product plan (features, tracks, demo script)
+├── AGENTS.md                    Repo-wide instructions for coding agents (CLAUDE.md imports it)
 ├── docs/                        This documentation
-└── backend/                     Node / TypeScript backend
+├── android/                     Kotlin app (Presage SmartSpectra); see android/AGENTS.md
+│   └── app/src/main/java/com/example/coolvitals/MainActivity.kt
+└── backend/                     Node / TypeScript backend; see backend/AGENTS.md
     ├── PROTOCOL.md              Short protocol table for the Android teammate
     ├── .env.example             Every environment variable the backend reads
     ├── contacts.example copy.json   Example allowlist (copy to contacts.json)

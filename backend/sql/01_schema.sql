@@ -198,6 +198,25 @@ CREATE TABLE IF NOT EXISTS report_cards (
 );
 CREATE INDEX IF NOT EXISTS report_cards_driver_idx ON report_cards (driver_id, created_at DESC);
 
+-- Every window where the engine took an action: 8-number context, the most severe action, the notify
+-- threshold used, and the driver's feedback as reward (+1 / -1). Separate from bandit_events, which the
+-- LinUCB bandit owns and trains on.
+CREATE TABLE IF NOT EXISTS decision_log (
+  ts         timestamptz NOT NULL,
+  driver_id  text NOT NULL,
+  trip_id    text NOT NULL,
+  tier       int NOT NULL,
+  dominant   text NOT NULL,
+  action     text NOT NULL,
+  context    double precision[] NOT NULL,   -- 6 levels, kids_in_car, low_experience
+  scores     jsonb NOT NULL,
+  reward     double precision,
+  reward_ts  timestamptz,
+  PRIMARY KEY (trip_id, ts)
+);
+SELECT create_hypertable('decision_log', 'ts',
+  chunk_time_interval => INTERVAL '7 days', if_not_exists => TRUE);
+
 -- Bandit decisions and their rewards.
 CREATE TABLE IF NOT EXISTS bandit_events (
   ts         timestamptz NOT NULL,
@@ -211,6 +230,7 @@ CREATE TABLE IF NOT EXISTS bandit_events (
   learned    boolean NOT NULL DEFAULT false,
   reward     double precision,              -- null until computed
   reward_ts  timestamptz,
+  false_alarm boolean NOT NULL DEFAULT false,   -- set by src/bandit/store.ts markFalseAlarm
   PRIMARY KEY (trip_id, ts)
 );
 SELECT create_hypertable('bandit_events', 'ts',

@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS report_cards (
 );
 CREATE INDEX IF NOT EXISTS report_cards_driver_idx ON report_cards (driver_id, created_at DESC);
 
-CREATE TABLE IF NOT EXISTS bandit_events (
+CREATE TABLE IF NOT EXISTS decision_log (
   ts         TIMESTAMPTZ NOT NULL,
   driver_id  TEXT NOT NULL,
   trip_id    TEXT NOT NULL,
@@ -113,7 +113,6 @@ CREATE TABLE IF NOT EXISTS bandit_events (
   action     TEXT NOT NULL,
   context    DOUBLE PRECISION[] NOT NULL,
   scores     JSONB NOT NULL,
-  learned    BOOLEAN NOT NULL DEFAULT FALSE,
   reward     DOUBLE PRECISION,
   reward_ts  TIMESTAMPTZ,
   PRIMARY KEY (trip_id, ts)

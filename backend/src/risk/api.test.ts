@@ -188,13 +188,13 @@ test("trip end stores a report card, observations and moves the driver profile",
 test("feedback on a notification rewards the logged decision and shifts the threshold", async () => {
   const t = await startTrip("jack");
   await drive(t, { speed_mph: 95, phone_in_hand: true, emotion_stress: 1, heart_rate: 100 }, 12);
-  const rows = (await db.query(`SELECT ts, action, context FROM bandit_events WHERE trip_id = $1 AND action = 'notify_contacts'`, [t])).rows as any[];
+  const rows = (await db.query(`SELECT ts, action, context FROM decision_log WHERE trip_id = $1 AND action = 'notify_contacts'`, [t])).rows as any[];
   assert.equal(rows.length, 1);
   assert.equal(rows[0].context.length, 8);
   const before = (await call("GET", "/drivers/jack/profile")).body.notify_threshold;
   await call("POST", `/trips/${t}/feedback`, { window_ts: new Date(rows[0].ts).toISOString(), verdict: "false_alarm" });
   const after = (await call("GET", "/drivers/jack/profile")).body;
   assert.equal(after.notify_threshold, before + 2);
-  const reward = ((await db.query(`SELECT reward FROM bandit_events WHERE trip_id = $1 AND action = 'notify_contacts'`, [t])).rows as any[])[0].reward;
+  const reward = ((await db.query(`SELECT reward FROM decision_log WHERE trip_id = $1 AND action = 'notify_contacts'`, [t])).rows as any[])[0].reward;
   assert.equal(reward, -1);
 });

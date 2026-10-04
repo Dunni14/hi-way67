@@ -210,7 +210,7 @@ export class PgRiskStore implements RiskStore {
 
   async addDecision(d: DecisionRow) {
     await this.db.query(
-      `INSERT INTO bandit_events (ts, driver_id, trip_id, tier, dominant, action, context, scores)
+      `INSERT INTO decision_log (ts, driver_id, trip_id, tier, dominant, action, context, scores)
        SELECT $1, t.driver_id, $2, $3, $4, $5, $6::double precision[], $7::jsonb FROM trips t WHERE t.trip_id = $2
        ON CONFLICT DO NOTHING`,
       [d.ts, d.tripId, d.tier, d.dominant, d.action, d.context, JSON.stringify(d.scores)],
@@ -219,7 +219,7 @@ export class PgRiskStore implements RiskStore {
 
   async rewardDecision(tripId: string, ts: string, reward: number) {
     const { rows } = await this.db.query(
-      `UPDATE bandit_events SET reward = $3, reward_ts = now() WHERE trip_id = $1 AND ts = $2 RETURNING action`,
+      `UPDATE decision_log SET reward = $3, reward_ts = now() WHERE trip_id = $1 AND ts = $2 RETURNING action`,
       [tripId, ts, reward],
     );
     return (rows[0]?.action ?? null) as Action | null;
