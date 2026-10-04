@@ -51,10 +51,10 @@ try {
   const q = (db: pg.Pool, sql: string) => db.query(sql, [driver]).catch((e) => console.warn("[smoke] cleanup:", e.message));
   await q(tiger, `DELETE FROM bandit_events WHERE driver_id = $1`);
   await q(tiger, `DELETE FROM bandit_models WHERE driver_id = $1`);
-  await q(risk, `DELETE FROM events WHERE trip_id IN (SELECT id FROM trips WHERE driver_id = $1)`);
-  await q(risk, `DELETE FROM windows WHERE trip_id IN (SELECT id FROM trips WHERE driver_id = $1)`);
+  await q(risk, `DELETE FROM events WHERE trip_id IN (SELECT trip_id FROM trips WHERE driver_id = $1)`);
+  await q(risk, `DELETE FROM windows WHERE trip_id IN (SELECT trip_id FROM trips WHERE driver_id = $1)`);
   await q(risk, `DELETE FROM trips WHERE driver_id = $1`);
-  await q(risk, `DELETE FROM drivers WHERE id = $1`);
+  await q(risk, `DELETE FROM drivers WHERE driver_id = $1`);
   await tiger.end();
   if (risk !== tiger) await risk.end();
 }
