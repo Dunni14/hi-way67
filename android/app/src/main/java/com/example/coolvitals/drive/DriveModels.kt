@@ -49,4 +49,6 @@ data class DriveUiState(
     val boxes: List<StatusBox>,
     val routeGeoJson: String?,
     val driverInitial: String = "D",
+    /** False while the backend cannot be reached (shown in the pill). */
+    val online: Boolean = true,
 )

@@ -1,15 +1,21 @@
 package com.example.coolvitals.drive
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.coolvitals.net.Backend
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 /**
  * One [DriveUiState]. Speed comes from 1 Hz GPS fixes; limit, tier and the box levels come from the
- * backend's response to each 10 s window ([onWindowResult]). Nothing here touches the map, so a speed
- * tick never reaches it.
+ * backend's response to each 10 s window ([onWindowResult]), which the [DriveSession] posts and feeds back.
+ * Nothing here touches the map, so a speed tick never reaches it. The session lives here, not in the
+ * activity, so a rotation does not start a second trip.
  */
 class DriveViewModel : ViewModel() {
     var cutoffs = LevelCutoffs()
@@ -24,11 +30,12 @@ class DriveViewModel : ViewModel() {
     private var window: WindowResult? = null
     private var speech: Level = Level.GOOD // ElevenLabs agent state is not wired yet: neutral
     private var route: String? = null
+    private var online = true
+    private var demo = false
+    private var session: DriveSession? = null
 
     private val _state = MutableStateFlow(build())
     val state: StateFlow<DriveUiState> = _state.asStateFlow()
-
-    private var demo = false
 
     fun onPermission(granted: Boolean) {
         if (demo) return
@@ -39,6 +46,7 @@ class DriveViewModel : ViewModel() {
     fun onFix(fix: DriveFix) {
         lastFix = fix
         nowMs = fix.timeMs
+        session?.onFix(fix)
         publish()
     }
 
@@ -62,6 +70,40 @@ class DriveViewModel : ViewModel() {
     fun setRoute(geoJson: String?) {
         route = geoJson
         publish()
+    }
+
+    /**
+     * Starts posting windows to [backend]. Idempotent, and a no-op in demo mode. Call once location permission
+     * is granted; the session keeps running across rotations and ends with the ViewModel.
+     */
+    fun startSession(backend: Backend, driverId: String, shareLocation: Boolean, signals: SignalSource = NoSignals) {
+        if (session != null || demo) return
+        session = DriveSession(
+            backend = backend,
+            driverId = driverId,
+            shareLocation = shareLocation,
+            signals = signals,
+            onResult = { onWindowResult(it) },
+            onConnection = { setOnline(it) },
+        ).also { it.start(viewModelScope) }
+    }
+
+    /** App in the background: location is off, so post nothing rather than empty windows. */
+    fun setActive(active: Boolean) {
+        session?.paused = !active
+    }
+
+    private fun setOnline(value: Boolean) {
+        if (online != value) {
+            online = value
+            publish()
+        }
+    }
+
+    override fun onCleared() {
+        // Activity finished for good (not a rotation): close the trip. Best effort, outlives viewModelScope.
+        session?.let { s -> CoroutineScope(Dispatchers.IO).launch { s.stop() } }
+        session = null
     }
 
     /** Fake state for design work (build order step 1) and screenshots. */
@@ -92,6 +134,7 @@ class DriveViewModel : ViewModel() {
             tier = w?.tier ?: 0,
             boxes = defaultBoxes(w?.levels ?: emptyMap(), w?.microsleep ?: false, speech, cutoffs),
             routeGeoJson = route,
+            online = online,
         )
     }
 }

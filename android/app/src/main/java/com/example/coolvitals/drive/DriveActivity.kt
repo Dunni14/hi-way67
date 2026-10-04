@@ -19,7 +19,9 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.example.coolvitals.BuildConfig
 import com.example.coolvitals.R
+import com.example.coolvitals.net.HttpBackend
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -73,6 +75,7 @@ class DriveActivity : AppCompatActivity() {
         val granted = hasLocationPermission()
         vm.onPermission(granted)
         if (intent.getBooleanExtra(EXTRA_DEMO, false)) vm.demo()
+        if (granted) startSession()
         showMap(granted)
         if (!granted) requestLocation.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
 
@@ -91,12 +94,19 @@ class DriveActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        vm.setActive(true)
         if (hasLocationPermission()) location.start()
     }
 
     override fun onStop() {
+        vm.setActive(false)
         location.stop()
         super.onStop()
+    }
+
+    /** Posts a window to the backend every 10 s (GPS only until Presage is merged in). No-op in demo mode. */
+    private fun startSession() {
+        vm.startSession(HttpBackend(BuildConfig.BACKEND_URL), BuildConfig.DRIVER_ID, BuildConfig.SHARE_LOCATION)
     }
 
     private fun hasLocationPermission() =
@@ -110,6 +120,7 @@ class DriveActivity : AppCompatActivity() {
             map = DriveMap(this, findViewById(R.id.mapContainer)).also { it.interactive = map.interactive }
             showMap(true)
             location.start()
+            startSession()
         }
     }
 
@@ -168,7 +179,7 @@ class DriveActivity : AppCompatActivity() {
         speed.text = speedText(s.speedMph)
         speed.setTextColor(ContextCompat.getColor(this, if (isOverLimit(s.speedMph, s.limitMph)) R.color.drive_speed_over else R.color.drive_great))
         findViewById<TextView>(R.id.avatarText).text = s.driverInitial
-        val (title, subtitle) = pillText(s.tripState)
+        val (title, subtitle) = pillText(s.tripState, s.online)
         findViewById<TextView>(R.id.pillTitle).text = title
         findViewById<TextView>(R.id.pillSubtitle).apply {
             text = subtitle ?: ""

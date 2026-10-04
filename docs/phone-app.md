@@ -16,7 +16,7 @@ Planned stack: native Kotlin, Presage native SDK, Android `SpeechRecognizer`, in
 | 6 | Drowsy and reckless weight vectors → `r`, multiplier `m` (context × speed), `R = clamp(100·r·m)` | Not started |
 | 7 | Decision tree: tiers 40/70/85, dominant sub-score, 15 s hold, 2 min per-tier cooldown, 70 sustained 2 min → 85 | Not started |
 | 8 | GPS speed and location; IMU hard-brake and swerve detection | Not started |
-| 9 | WebSocket client: `hello` on connect, `risk_window` every 10 s, `alert`, `settings`, `trip_start` / `trip_end` | Not started |
+| 9 | WebSocket client: `hello` on connect, `risk_window` every 10 s, `alert`, `settings`, `trip_start` / `trip_end` | Not started. The Drive screen uses the REST path instead (`POST /trips`, `/windows`, `/end`), see [drive-screen.md](drive-screen.md#backend-link). The WebSocket is still needed for `speak` / `utterance` |
 | 10 | Play `speak.audio` (base64 mp3), or on-device TTS when it is empty | Not started |
 | 11 | Listen for `listenAfterMs` after a `speak`, send `utterance` with the same `context`, then `speak_done` | Not started |
 | 12 | `navigate` → open maps searching "rest stop" | Not started |

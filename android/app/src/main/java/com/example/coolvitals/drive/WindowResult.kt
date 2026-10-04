@@ -12,6 +12,8 @@ data class WindowResult(
     val microsleep: Boolean,
     val limitMph: Int?,
     val limitSource: LimitSource,
+    /** The backend ended the trip on this window (stopped long enough): stop sending. */
+    val tripEnded: Boolean = false,
 ) {
     companion object {
         fun fromJson(json: String): WindowResult {
@@ -24,6 +26,7 @@ data class WindowResult(
                 microsleep = o.optString("override") == "microsleep",
                 limitMph = gps?.takeIf { !it.isNull("limit_mph") }?.optInt("limit_mph"),
                 limitSource = LimitSource.parse(gps?.optString("limit_source")),
+                tripEnded = gps?.optBoolean("trip_ended", false) ?: false,
             )
         }
     }

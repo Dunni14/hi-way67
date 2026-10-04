@@ -40,10 +40,13 @@ fun showFallbackDot(source: LimitSource, limitMph: Int?): Boolean = source == Li
 fun speedText(speedMph: Int?): String = speedMph?.toString() ?: "--"
 
 /** Pill: title and subtitle ("Driving" over "Monitoring"). */
-fun pillText(t: TripState): Pair<String, String?> = when (t) {
-    TripState.DRIVING -> "Driving" to "Monitoring"
-    TripState.STOPPED -> "Stopped" to "Monitoring"
-    TripState.NO_GPS -> "No GPS" to null
+fun pillText(t: TripState, online: Boolean = true): Pair<String, String?> {
+    val watching = if (online) "Monitoring" else "Offline"
+    return when (t) {
+        TripState.DRIVING -> "Driving" to watching
+        TripState.STOPPED -> "Stopped" to watching
+        TripState.NO_GPS -> "No GPS" to if (online) null else watching
+    }
 }
 
 fun tripStateOf(permissionGranted: Boolean, lastFixAgeMs: Long?, speedMps: Double?): TripState = when {

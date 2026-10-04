@@ -7,13 +7,23 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Looper
 
-/** A good fix as the Drive screen needs it. */
-data class DriveFix(val speedMps: Double, val courseDeg: Double?, val timeMs: Long)
+/**
+ * A good fix. `timeMs` is the fix's own UTC time (it is what the backend uses for trip start/stop), the rest
+ * is what goes into the window payload. The defaults are only for fake data.
+ */
+data class DriveFix(
+    val speedMps: Double,
+    val courseDeg: Double?,
+    val timeMs: Long,
+    val lat: Double = 0.0,
+    val lon: Double = 0.0,
+    val accuracyM: Float = 5f,
+)
 
 /**
  * 1 Hz fixes from the platform GPS provider (no Play Services dependency). Applies the same filter as the
  * backend: accuracy worse than 30 m or a negative speed is dropped. The Mapbox puck uses its own provider,
- * so this feeds only the header speed and the bearing-hold rule.
+ * so this feeds the header speed, the bearing-hold rule and the window payload.
  */
 class DriveLocationSource(private val context: Context, private val onFix: (DriveFix) -> Unit) {
     private val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
@@ -24,7 +34,16 @@ class DriveLocationSource(private val context: Context, private val onFix: (Driv
         val acc = if (loc.hasAccuracy()) loc.accuracy else null
         if (isGoodFix(acc, speed)) {
             val course = if (loc.hasBearing()) loc.bearing.toDouble() else null
-            onFix(DriveFix(speed!!.toDouble(), course, System.currentTimeMillis()))
+            onFix(
+                DriveFix(
+                    speedMps = speed!!.toDouble(),
+                    courseDeg = course,
+                    timeMs = if (loc.time > 0) loc.time else System.currentTimeMillis(),
+                    lat = loc.latitude,
+                    lon = loc.longitude,
+                    accuracyM = acc!!,
+                ),
+            )
         }
     }
 

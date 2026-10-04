@@ -29,6 +29,11 @@ android {
             "PRESAGE_API_KEY",
             "\"${localProperties.getProperty("PRESAGE_API_KEY", "")}\""
         )
+        // Drive screen backend. Defaults reach a backend on the dev machine from the emulator; on a phone
+        // set BACKEND_URL to the laptop's LAN IP (or an HTTPS tunnel) in local.properties.
+        buildConfigField("String", "BACKEND_URL", "\"${localProperties.getProperty("BACKEND_URL", "http://10.0.2.2:8787")}\"")
+        buildConfigField("String", "DRIVER_ID", "\"${localProperties.getProperty("DRIVER_ID", "demo")}\"")
+        buildConfigField("boolean", "SHARE_LOCATION", localProperties.getProperty("SHARE_LOCATION", "true"))
     }
 
     buildFeatures {
