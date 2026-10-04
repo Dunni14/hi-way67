@@ -9,6 +9,24 @@ class CoreTest {
 
     @Test fun reportCardEmpty() = assertNull(ReportCard.build(emptyList()))
 
+    @Test fun tripRecapSpeedsAndAlertness() {
+        val speed = SpeedTracker()
+        assertNull(speed.avg); assertNull(speed.top)
+        listOf(30.0, 60.0, 45.0, -1.0, Double.NaN).forEach(speed::add) // bad readings are ignored
+        assertEquals(45.0, speed.avg); assertEquals(60.0, speed.top)
+
+        val card = ReportCard.build((0 until 6).map { sample(it, 20.0) })
+        val scored = TripRecap.of(durationMs = 61_000, speed = speed, card = card)
+        assertEquals(2, scored.durationMin)
+        assertEquals(80, scored.alertness); assertEquals("GOOD", scored.alertnessLabel)
+        assertEquals("GREAT", TripRecap(1, null, null, TripRecap.alertnessOf(10.0)).alertnessLabel)
+        assertEquals("LOW", TripRecap(1, null, null, TripRecap.alertnessOf(55.0)).alertnessLabel)
+
+        // No backend verdicts: speeds still show, alertness is missing rather than made up.
+        val unscored = TripRecap.of(durationMs = 30_000, speed = speed, card = null)
+        assertEquals(45.0, unscored.avgSpeedMph); assertNull(unscored.alertness); assertNull(unscored.alertnessLabel)
+    }
+
     @Test fun tripHistoryKeepsNewestFirstAndSurvivesBadData() {
         fun trip(n: Long) = TripSummary(endedAtMs = n, durationMin = 5, grade = "B", avgRisk = 20.0, peakRisk = 45.5, alerts = 1, demo = n % 2 == 0L)
         var h = emptyList<TripSummary>()

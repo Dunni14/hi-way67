@@ -38,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import dev.driverguardian.R
 import dev.driverguardian.data.AppSettings
@@ -47,6 +48,7 @@ import dev.driverguardian.trip.UiState
 import dev.driverguardian.voice.VoicePlayer
 import dg.core.SPEED_LIMIT_MPH
 import dg.core.SharingMode
+import dg.core.TripRecap
 import dg.core.TripSummary
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -374,6 +376,37 @@ fun SettingsScreen(s: AppSettings, onSave: (AppSettings) -> Unit, onDebug: () ->
             Spacer(Modifier.width(8.dp)); Text("Demo mode (scripted driver signals, fake 65 mph)", color = OnSurface)
         }
         OutlinedButton(onClick = onDebug) { Text("Debug: features, weights, face values") }
+    }
+}
+
+/** Popup shown when a trip ends: how fast and how alert the drive was. */
+@Composable
+fun TripRecapDialog(recap: TripRecap, onDone: () -> Unit, onReport: (() -> Unit)?) {
+    Dialog(onDismissRequest = onDone) {
+        Column(Modifier.fillMaxWidth().clip(CardShape).background(Surface).padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Trip summary", color = OnSurface, fontSize = 22.sp)
+            Text("${recap.durationMin} min", color = SystemText, style = Label)
+            RecapRow("Average speed", recap.avgSpeedMph?.let { "%.0f mph".format(it) } ?: "--", SystemText)
+            RecapRow("Top speed", recap.topSpeedMph?.let { "%.0f mph".format(it) } ?: "--", SystemText)
+            val alertColor = when (recap.alertnessLabel) { "GREAT" -> Good; "GOOD" -> Main; "LOW" -> Bad; else -> SystemText }
+            RecapRow("Alertness", recap.alertness?.let { "$it%  ${recap.alertnessLabel}" } ?: "Not scored", alertColor)
+            if (recap.alertness == null) Text("Alertness comes from the backend's scoring, which this trip did not get.", color = SystemText, style = Label)
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (onReport != null) OutlinedButton(onClick = onReport, modifier = Modifier.weight(1f), shape = CardShape) { Text("View report") }
+                Button(onClick = onDone, modifier = Modifier.weight(1f), shape = CardShape) { Text("Done") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecapRow(label: String, value: String, valueColor: Color) {
+    Row(
+        Modifier.fillMaxWidth().clip(CardShape).background(Color.White).padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, color = SystemText, style = Label, modifier = Modifier.weight(1f))
+        Text(value, color = valueColor, fontSize = 20.sp, fontWeight = FontWeight.Bold)
     }
 }
 

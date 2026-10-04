@@ -21,7 +21,9 @@ import dg.core.PhoneFrame
 import dg.core.RealClock
 import dg.core.ReportCard
 import dg.core.TripClock
+import dg.core.SpeedTracker
 import dg.core.TripHistory
+import dg.core.TripRecap
 import dg.core.TripSample
 import dg.core.TripSummary
 import dg.core.WindowAggregator
@@ -105,6 +107,12 @@ class TripController(app: Application) : AndroidViewModel(app) {
     val history: StateFlow<List<TripSummary>> = _history
     private var tripDemo = false
 
+    // End-of-trip popup: speeds seen during the trip plus the engine's alertness, until dismissed.
+    private var speed = SpeedTracker()
+    private val _recap = MutableStateFlow<TripRecap?>(null)
+    val recap: StateFlow<TripRecap?> = _recap
+    fun dismissRecap() { _recap.value = null }
+
     /** Pacing of the current trip: [DemoClock] in demo mode, else real time. */
     private var clock: TripClock = RealClock
     private var tripStartMs = 0L
@@ -145,6 +153,7 @@ class TripController(app: Application) : AndroidViewModel(app) {
         clock = c
         client.send(PhoneFrame.TripStart)
         sentEvents.clear(); samples.clear(); _report.value = null
+        speed = SpeedTracker(); _recap.value = null
         _ui.value = UiState(running = true, calibrating = true, calibrationLeftSec = calibrationLeftSec())
 
         val agg = WindowAggregator()
@@ -153,7 +162,7 @@ class TripController(app: Application) : AndroidViewModel(app) {
             agg.onMotion(DemoScript.DEMO_SPEED_MPH, 42.2808, -83.743)
         } else {
             motion = MotionSource(getApplication(),
-                onMotion = { mph, lat, lon -> viewModelScope.launch { agg.onMotion(mph, lat, lon) } },
+                onMotion = { mph, lat, lon -> viewModelScope.launch { speed.add(mph); agg.onMotion(mph, lat, lon) } },
                 onEvent = { ev -> viewModelScope.launch { agg.onImuEvent(ev) } },
             ).also { it.start() }
         }
@@ -208,6 +217,7 @@ class TripController(app: Application) : AndroidViewModel(app) {
                 _history.value = updated
                 viewModelScope.launch { historyStore.save(updated) }
             }
+            _recap.value = TripRecap.of(System.currentTimeMillis() - tripStartMs, speed, card)
         }
         _ui.value = _ui.value.copy(running = false, calibrating = false, alarmOn = false)
     }
@@ -215,6 +225,7 @@ class TripController(app: Application) : AndroidViewModel(app) {
     private fun sendWindow(w: PhoneFrame.RiskWindow) {
         client.sendWindow(w)
         sentEvents[w.ts] = w.events
+        if (tripDemo) speed.add(w.speed) // demo mode has no GPS callbacks; its speed only shows up in the windows
         val u = _ui.value
         _ui.value = u.copy(lastSignals = w.signals, windowsSent = u.windowsSent + 1, speedMph = w.speed, calibrationLeftSec = calibrationLeftSec())
     }
