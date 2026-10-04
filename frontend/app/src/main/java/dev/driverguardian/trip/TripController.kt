@@ -134,7 +134,7 @@ class TripController(app: Application) : AndroidViewModel(app) {
         clock = c
         client.send(PhoneFrame.TripStart)
         sentEvents.clear(); samples.clear(); _report.value = null
-        _ui.value = UiState(running = true, calibrating = true, calibrationLeftSec = (c.realMs(CALIBRATION_MS) / 1000).toInt())
+        _ui.value = UiState(running = true, calibrating = true, calibrationLeftSec = calibrationLeftSec())
 
         val agg = WindowAggregator()
         val source = if (demo) FakePresageSource(c) else SmartSpectraPresageSource(getApplication())
@@ -158,6 +158,15 @@ class TripController(app: Application) : AndroidViewModel(app) {
                         yawnCount = u.yawnCount + if (f.yawn) 1 else 0,
                         lastYawnAtMs = if (f.yawn) System.currentTimeMillis() else u.lastYawnAtMs,
                     )
+                }
+            }
+            // The countdown ticks every second; the windows below only close every 10 s.
+            launch {
+                while (true) {
+                    val left = calibrationLeftSec()
+                    if (_ui.value.calibrationLeftSec != left) _ui.value = _ui.value.copy(calibrationLeftSec = left)
+                    if (left == 0) break
+                    delay(200)
                 }
             }
             // A window closes every WINDOW_MS of script time, paced in real time by the clock.
@@ -187,10 +196,13 @@ class TripController(app: Application) : AndroidViewModel(app) {
     private fun sendWindow(w: PhoneFrame.RiskWindow) {
         client.sendWindow(w)
         sentEvents[w.ts] = w.events
-        val left = ((tripStartMs + clock.realMs(CALIBRATION_MS) - System.currentTimeMillis()) / 1000).toInt().coerceAtLeast(0)
         val u = _ui.value
-        _ui.value = u.copy(lastSignals = w.signals, windowsSent = u.windowsSent + 1, speedMph = w.speed, calibrationLeftSec = left)
+        _ui.value = u.copy(lastSignals = w.signals, windowsSent = u.windowsSent + 1, speedMph = w.speed, calibrationLeftSec = calibrationLeftSec())
     }
+
+    /** Real seconds of calibration left, rounded up so it starts at the full length and ends on 0. */
+    private fun calibrationLeftSec(): Int =
+        ((tripStartMs + clock.realMs(CALIBRATION_MS) - System.currentTimeMillis() + 999) / 1000).toInt().coerceAtLeast(0)
 
     /** The engine's verdict on one of our windows: update the screen, sound the alarm on an urgent alert. */
     private fun onEvaluation(e: BackendFrame.Evaluation) {
