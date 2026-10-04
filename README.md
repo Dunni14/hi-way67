@@ -237,6 +237,40 @@ These collapse into one `surroundings_risk` feature. Rear camera object detectio
 6. Teammate laughs and answers out loud. The group sees "Alex says: pulling over at the next exit."
 7. Show the trip timeline from Tiger Data.
 
+## What we learned
+
+### Drowsy driving is bigger than the numbers suggest
+
+Figures are approximate, from public NHTSA, CDC and AAA Foundation reports. Check the source before quoting them on Devpost.
+
+- **Roughly 100,000 police-reported crashes a year** in the US involve drowsy driving, with about 50,000 injuries and several hundred deaths (NHTSA). Official counts are widely seen as a floor, because there is no breath test for sleepiness and crash reports rely on the driver admitting it.
+- **Under-counted.** AAA Foundation crash-camera studies put drowsiness near 1 in 10 crashes, well above the police figure.
+- **Common.** About 1 in 25 adult drivers reports falling asleep at the wheel in the past 30 days (CDC), and a third of US adults sleep under the recommended 7 hours.
+- **Sleep loss behaves like drinking.** After about 18 hours awake, impairment is similar to a 0.05 blood alcohol level, and after 24 hours it is similar to 0.10, over the legal limit (Williamson and Feyer, 2000).
+- **Risk climbs steeply as sleep drops.** AAA found crash risk roughly doubles at 5 to 6 hours of sleep and is several times higher below 5.
+- **Microsleeps are the killer.** A 4 second microsleep at 65 mph covers about 380 feet with nobody driving. The driver does not feel it coming, which is why a camera that watches for it beats asking the driver how tired they feel.
+- **Late night and mid-afternoon are the danger windows**, matching the circadian dips. That is why the trip log tracks the time of day.
+
+The takeaway: the driver is the worst judge of their own drowsiness, so the signal has to come from outside them, and the response has to keep them awake rather than just alarm them.
+
+### What each tool unlocked
+
+| Tool | What it let us do | Use case we found |
+|---|---|---|
+| **Presage** | Contactless heart rate, breathing and face metrics from the phone camera | Drowsiness shows up before the driver admits it: a slowing pulse and breathing, longer eye closures and head nods. The same readings separate a drowsy driver from a stressed or reckless one, so the decision tree can answer differently. |
+| **ElevenLabs** | Natural voice out, voice replies in | A conversation is an active test: a driver who answers back is awake. It also means the driver never touches the screen, and it reads family and friends' messages aloud in a human voice. |
+| **Photon Spectrum (iMessage)** | A real agent in a family group chat | Family gets "where's Alex?" answers and alerts without installing anything. The roast call turns a safety alert into social pressure that works better than a beep. Messages relay back to the driver by voice. |
+| **Tiger Data** | Time-series storage for trip windows | Report cards, worst times of day to drive, and weekly trends, so the app can coach on patterns and not only react in the moment. |
+| **OpenRouter** | An LLM behind the agent | Classifying what a family message means (urgent, chatty, a roast) and deciding whether the driver should hear it now. |
+
+### Use cases beyond the demo
+
+- **Long-haul and rideshare drivers** who drive tired by the nature of the job.
+- **Parents and teens**: the family group sees a new driver's trip report with no tracking app and no nagging.
+- **Night shift workers** driving home after a shift, the highest-risk commute.
+- **Road trips**: a co-pilot that keeps the driver talking and finds the next rest stop.
+- **Fleet managers**: the same risk score and trip log, aggregated per driver.
+
 ## Devpost checklist
 
 - Title and tagline that lean into the roast
