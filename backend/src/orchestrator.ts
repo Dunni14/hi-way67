@@ -170,11 +170,10 @@ export function createOrchestrator(store: TripStore) {
 
   async function escalate(dominant: Dominant) {
     trip.lastHighAlertAt = Date.now();
+    // The alert goes to the whole chat; the location only to guardians.
+    await post(`⚠️ ${d()} is at high risk (${dominant}). I've told them to pull over.`).catch(logPostError);
     const link = trip.mapsLink();
-    await post(
-      `⚠️ ${d()} is at high risk (${dominant}). I've told them to pull over.${link ? ` Location: ${link}` : ""}`,
-      "guardian",
-    ).catch(logPostError);
+    if (link) await post(`📍 ${d()}'s location: ${link}`, "guardian").catch(logPostError);
     if (dominant === "drowsy" && !roast.active) {
       roast.start();
       await post(roast.callText()).catch(logPostError);

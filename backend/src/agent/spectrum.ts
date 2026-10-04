@@ -6,7 +6,7 @@ import { Spectrum, type Message, type Space } from "spectrum-ts";
 import { imessage } from "@spectrum-ts/imessage";
 import { telegram } from "@spectrum-ts/telegram";
 import { config, required } from "../config.ts";
-import { allContacts, lookupContact, type Contact, type Role } from "./contacts.ts";
+import { allContacts, contactPlatform, lookupContact, type Contact, type Platform, type Role } from "./contacts.ts";
 
 export type Inbound = { contact: Contact; space: Space; message: Message; text: string; isGroup: boolean };
 
@@ -44,7 +44,8 @@ export async function startSpectrum(onMessage: (m: Inbound) => Promise<void>) {
     projectSecret: config.spectrum.projectSecret(),
     providers,
   });
-  console.log(`[spectrum] connected: ${enabled.join(", ")}`);
+  const perPlatform = allContacts().reduce<Record<string, number>>((n, c) => ({ ...n, [contactPlatform(c)]: (n[contactPlatform(c)] ?? 0) + 1 }), {});
+  console.log(`[spectrum] connected: ${enabled.join(", ")}; contacts: ${JSON.stringify(perPlatform)}. Send /start in the family group to bind it.`);
 
   void (async () => {
     for await (const [space, message] of app!.messages) {
@@ -59,18 +60,25 @@ export async function startSpectrum(onMessage: (m: Inbound) => Promise<void>) {
 }
 
 async function route(space: Space, message: Message, onMessage: (m: Inbound) => Promise<void>) {
-  const contact = lookupContact(message.sender?.id);
+  const platform = space.__platform as Platform;
+  const contact = lookupContact(message.sender?.id, platform);
   // Telegram has no "group" type field; treat anything that isn't an iMessage DM as a possible group.
   const isGroup = spaceType(space) === "group" || (space.__platform !== "imessage" && space.id.startsWith("-"));
   const text = message.content.type === "text" ? message.content.text.trim() : "";
 
-  if (text === "/start" && isGroup) {
+  // Telegram sends "/start@BotName" when the command is picked from the menu in a group.
+  if (/^\/start(@\w+)?$/i.test(text) && isGroup) {
     groupSpace = space;
+    console.log(`[spectrum] group chat bound via /start: ${platform} ${space.id}`);
     await space.send(`Hi! I'm ${config.driverName}'s driving buddy. Ask me where ${config.driverName} is, or send a message for me to read to them.`);
     return;
   }
   if (!contact) {
-    console.log(`[spectrum] ignoring message from non-allowlisted sender ${message.sender?.id}`);
+    const id = message.sender?.id;
+    console.log(
+      `[spectrum] ignoring non-allowlisted ${platform} sender ${id}. To allow them, add to contacts.json: ` +
+        JSON.stringify({ handle: id, name: "<name>", role: "friend", platform }),
+    );
     return;
   }
 
@@ -101,15 +109,23 @@ export async function post(text: string, minRole: Role = "friend") {
   for (const c of targets) await dm(c.handle, text);
 }
 
-/** Direct message one contact, creating the DM if we haven't seen one. */
+/**
+ * Direct message one contact. Reuses the DM space we saw them write from; only
+ * iMessage DMs can be opened from our side (Telegram bots can't start a chat).
+ */
 export async function dm(handle: string, text: string) {
   try {
     let space = dmSpaces.get(handle);
-    if (!space && app) {
+    const contact = allContacts().find((c) => c.handle === handle);
+    if (!space && app && (!contact || contactPlatform(contact) === "imessage")) {
       space = await imessage(app).space.create(handle);
       dmSpaces.set(handle, space);
     }
-    await space?.send(text);
+    if (!space) {
+      console.warn(`[spectrum] can't DM ${contact?.name ?? handle} on telegram until they message the bot privately once`);
+      return;
+    }
+    await space.send(text);
   } catch (err) {
     console.error(`[spectrum] DM to ${handle} failed:`, err);
   }

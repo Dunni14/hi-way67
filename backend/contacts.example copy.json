@@ -1,4 +1,5 @@
 [
   { "handle": "+15551234567", "name": "Mom", "role": "guardian" },
-  { "handle": "friend@icloud.com", "name": "Sam", "role": "friend" }
+  { "handle": "friend@icloud.com", "name": "Sam", "role": "friend" },
+  { "handle": "123456789", "name": "Jo", "role": "friend", "platform": "telegram" }
 ]

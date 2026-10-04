@@ -18,26 +18,36 @@ It then loops over `app.messages` and handles inbound messages only. A handler e
 The agent learns which group is "the family chat" at runtime. Nothing is configured.
 
 - The first group message from an **allowlisted** contact captures that group.
-- Anyone sending `/start` in a group captures it, and the agent replies with a greeting. This command does **not** check the allowlist.
+- Anyone sending `/start` (or `/start@YourBot`, which Telegram sends from the command menu) in a group captures it, and the agent replies with a greeting. This command does **not** check the allowlist.
 - Telegram groups are detected by a negative chat id.
 - The capture lives in memory. After a restart, someone has to post in the group again.
 
-DM spaces are cached per contact as they arrive. `dm()` creates a new iMessage DM when none is cached. This is iMessage only, so DMs fail under a Telegram-only setup.
+DM spaces are cached per contact as they arrive. When none is cached, `dm()` opens a new DM for iMessage contacts only. Telegram bots can't start a chat, so a Telegram contact is only reachable by DM after they've messaged the bot privately; otherwise `dm()` logs a warning and skips them.
 
 ### Posting
 
 | Function | Behavior |
 |---|---|
 | `post(text)` | Sends to the group. With no group, DMs every allowlisted contact. |
-| `post(text, "guardian")` | Always DMs guardians only, even when a group exists. This keeps location away from friends. |
+| `post(text, "guardian")` | Always DMs guardians only, even when a group exists. Used for the location link, so it stays away from friends. |
 | `dm(handle, text)` | Sends one DM. Errors are logged and swallowed. |
+
+An 85-tier alert posts "⚠️ Alex is at high risk…" to the whole chat and the maps link to guardians only.
+
+### Telegram setup
+
+1. Create the bot with @BotFather and put the token in `TELEGRAM_BOT_TOKEN`; include `telegram` in `SPECTRUM_PROVIDERS`.
+2. **Turn privacy mode off:** BotFather → `/setprivacy` → your bot → Disable. Then remove and re-add the bot to the group (the setting applies on join). With privacy on, the bot only sees commands, so roasts and questions never arrive.
+3. Start the backend **without** `NO_SPECTRUM`, then send `/start` in the group. The log shows `group chat bound via /start`.
+4. Have each person write something in the group. Unknown senders are logged with a ready-made line, e.g. `{"handle":"123456789","name":"<name>","role":"friend","platform":"telegram"}`. Paste it into `contacts.json`, set the name and role, and restart.
+5. For guardian-only messages (the location link) to reach a Telegram guardian, they must message the bot privately once.
 
 ## Roles
 
 | Role | Can ask questions | Gets location | Gets 85-tier alerts | Can message / roast driver |
 |---|---|---|---|---|
-| Guardian | Yes | Yes (in answers and alerts) | Yes, by DM | Yes |
-| Friend | Yes, without location | No | No (sees only the roast call in the group) | Yes |
+| Guardian | Yes | Yes (in answers, and the location DM at 85) | Yes (group alert + location DM) | Yes |
+| Friend | Yes, without location | No | Yes, in the group, without location | Yes |
 
 ## Message handling
 
@@ -102,7 +112,7 @@ Only a **drowsy** 85 starts a roast. A **reckless** 85 alerts guardians and noth
 |---|---|---|---|
 | Trip start note ("🚗 Alex just started driving", plus the late-night count) | Posted | Not posted | Not posted |
 | 40 / 70 alerts | Voice only | Voice only | Voice only |
-| 85 alert | Guardian DM + roast | Guardian DM + roast | Driver asked by voice; yes → same as other modes |
+| 85 alert | Group alert + guardian location DM + roast | Group alert + guardian location DM + roast | Driver asked by voice; yes → same as other modes |
 | Answers to questions | Full facts | Full facts only within 15 min of an 85 alert | "Sharing is off" |
 | Trip summary on `trip_end` | Posted | Posted | Not posted |
 | Arrival DM to contacts who asked | Sent | Sent | **Sent** (known issue: not gated) |
