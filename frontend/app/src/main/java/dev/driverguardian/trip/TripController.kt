@@ -89,6 +89,8 @@ class TripController(app: Application) : AndroidViewModel(app) {
     )
     val connection: StateFlow<Conn> = client.state
     val voiceState: StateFlow<VoicePlayer.State> = voice.state
+    /** Trip history from the backend risk engine (Tiger Data), on the current host. */
+    val history = dev.driverguardian.net.HistoryApi { settings.host }
 
     // This trip's windows (events by ts) and the engine's verdicts; the report card is built from these.
     private val sentEvents = mutableMapOf<Long, List<String>>()

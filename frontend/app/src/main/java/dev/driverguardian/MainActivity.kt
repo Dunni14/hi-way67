@@ -30,6 +30,7 @@ import dev.driverguardian.ui.DashcamScreen
 import dev.driverguardian.ui.DriverGuardianColors
 import dev.driverguardian.ui.PlaceholderScreen
 import dev.driverguardian.ui.TabBar
+import dev.driverguardian.ui.TripHistoryScreen
 import dev.driverguardian.ui.DebugScreen
 import dev.driverguardian.ui.ReportCardScreen
 import dev.driverguardian.ui.SettingsScreen
@@ -80,16 +81,24 @@ class MainActivity : ComponentActivity() {
         val settings by vm.settingsFlow.collectAsState()
         val report by vm.report.collectAsState()
         val parked = !ui.running || ui.speedMph < 3
-        // Jump to the report card when a trip ends.
-        LaunchedEffect(report) { if (report != null) tab = "stats" }
+        // Jump to the report card when a trip ends; "Done" goes on to the trip history.
+        var reportOpen by remember { mutableStateOf(false) }
+        LaunchedEffect(report) { if (report != null) { tab = "stats"; reportOpen = true } }
         // Leaving the parked state always brings the driver back to the Drive tab.
         LaunchedEffect(parked) { if (!parked) { tab = "drive"; showDebug = false } }
 
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f)) {
                 when (tab) {
-                    "stats" -> report?.let { ReportCardScreen(it) { tab = "drive" } }
-                        ?: PlaceholderScreen("Stats", "No trip yet. Start one on the Drive tab; its report card (grade, risk over time, advice) shows up here when it ends.")
+                    "stats" -> {
+                        val card = report
+                        if (card != null && reportOpen) ReportCardScreen(card) { reportOpen = false }
+                        else TripHistoryScreen(
+                            api = vm.history,
+                            driverHint = settings.driverName,
+                            onOpenLastReport = if (card != null) ({ reportOpen = true }) else null,
+                        )
+                    }
                     "contacts" -> PlaceholderScreen(
                         "Contacts",
                         "Who gets alerts is set on the backend for now: contacts.json lists guardians (alerts and location) " +

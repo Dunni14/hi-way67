@@ -48,18 +48,18 @@ import dg.core.SharingMode
 import kotlinx.coroutines.launch
 
 // Palette and shapes from the Figma file (MHacks | AutoAI, "UI" section).
-private val Main = Color(0xFF366DE1) // Menu main
-private val Good = Color(0xFF30A54D)
-private val Bad = Color(0xFFF35C5C)
-private val Warn = Color(0xFFFFB74D)
-private val SystemText = Color(0xFF495675) // System color
-private val OnSurface = Color(0xFF1D1B20)
-private val Surface = Color(0xFFF9FCFE) // Background color
-private val TabBg = Color(0xFFFDFDFD) // Tab background
-private val Pressed = Color(0xFFECF4FD) // Button pressed
-private val ScreenBg = Brush.verticalGradient(listOf(Color(0xFFF3F8FE), Color(0xFFECF4FE)))
-private val CardShape = RoundedCornerShape(20.dp)
-private val Label = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, lineHeight = 15.sp, letterSpacing = 0.5.sp)
+internal val Main = Color(0xFF366DE1) // Menu main
+internal val Good = Color(0xFF30A54D)
+internal val Bad = Color(0xFFF35C5C)
+internal val Warn = Color(0xFFFFB74D)
+internal val SystemText = Color(0xFF495675) // System color
+internal val OnSurface = Color(0xFF1D1B20)
+internal val Surface = Color(0xFFF9FCFE) // Background color
+internal val TabBg = Color(0xFFFDFDFD) // Tab background
+internal val Pressed = Color(0xFFECF4FD) // Button pressed
+internal val ScreenBg = Brush.verticalGradient(listOf(Color(0xFFF3F8FE), Color(0xFFECF4FE)))
+internal val CardShape = RoundedCornerShape(20.dp)
+internal val Label = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, lineHeight = 15.sp, letterSpacing = 0.5.sp)
 
 val DriverGuardianColors = lightColorScheme(primary = Main, surface = Surface, onSurface = OnSurface)
 
@@ -99,10 +99,13 @@ fun DashcamScreen(
             }
         }
 
-        // The design shows a map in this card. The app has no map, so the card holds the driver camera.
+        // The card shows the 3D map; the driver camera is a small picture-in-picture in the corner.
         Box(Modifier.fillMaxWidth().weight(1f).clip(CardShape).background(Color.Black)) {
-            // Recreate the preview when ownership flips, so the app never holds the camera Presage needs.
-            key(liveSensing) { CameraPreview(Modifier.fillMaxSize(), sdkOwnsCamera = liveSensing) }
+            DriveMapView(Modifier.fillMaxSize())
+            Box(Modifier.align(Alignment.TopEnd).padding(10.dp).size(72.dp, 96.dp).clip(RoundedCornerShape(12.dp)).background(Color.Black)) {
+                // Recreate the preview when ownership flips, so the app never holds the camera Presage needs.
+                key(liveSensing) { CameraPreview(Modifier.fillMaxSize(), sdkOwnsCamera = liveSensing) }
+            }
             val button = Modifier.align(Alignment.BottomCenter).padding(12.dp).fillMaxWidth()
             if (ui.running) {
                 HoldButton("Hold to end trip", button, onHeld = onEnd)
