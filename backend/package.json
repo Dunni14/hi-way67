@@ -7,9 +7,10 @@
     "start": "tsx --env-file-if-exists=.env src/index.ts",
     "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
     "smoke:tts": "tsx --env-file-if-exists=.env src/dev/smokeTts.ts",
+    "smoke:tiger": "tsx --env-file-if-exists=.env src/dev/tigerSmoke.ts",
     "fake-phone": "tsx --env-file-if-exists=.env src/dev/fakePhone.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/risk/*.test.ts"
+    "test": "tsx --test src/risk/*.test.ts src/bandit/*.test.ts"
   },
   "dependencies": {
     "@spectrum-ts/imessage": "^12.10.1",

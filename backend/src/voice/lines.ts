@@ -40,6 +40,31 @@ export function alertLine(tier: Tier, dominant: Dominant): string {
   return pick(ALERTS[tier][dominant]);
 }
 
+/** Spoken lines for the bandit's interventions (tier 1/2). Templates, like the alerts. */
+const INTERVENTION_LINES: Record<string, string[]> = {
+  calm_checkin: ["You seem tired. How are you feeling?"],
+  start_conversation: ["Let's chat for a minute to keep you sharp. What's the best thing you ate this week?"],
+  suggest_music: ["Let's put on something upbeat to keep you sharp."],
+  suggest_rest_stop: ["You look tired. Want me to find the nearest rest stop?"],
+  calm_slowdown: ["Easy there. Let's ease off the gas a little."],
+  breathing_prompt: ["Let's take two slow breaths together. In through the nose, and slowly out. Once more."],
+  firm_warning: ["Slow down and focus on the road right now. This is not safe."],
+  family_voice_warning: ["Hey, it's us. Please slow down and be safe. We want you home in one piece."],
+};
+
+/** Letter grade for the trip so far, from its peak risk (same cut-offs as the tiers). */
+export const gradeOf = (maxR: number) => (maxR >= 85 ? "D" : maxR >= 70 ? "C" : maxR >= 40 ? "B" : "A");
+
+/** Line for an intervention id, or null when we have no script for it (caller falls back to `alertLine`). */
+export function interventionLine(id: string, opts: { grade?: string } = {}): string | null {
+  if (id === "report_card_reminder") return `This trip is scoring a ${opts.grade ?? "B"} so far. Let's bring it back up.`;
+  const lines = INTERVENTION_LINES[id];
+  return lines ? pick(lines) : null;
+}
+
+/** Interventions whose script ends in a yes/no question the existing "yes -> navigate to a rest stop" handler can answer. */
+export const ASKS_REST_STOP = new Set(["suggest_rest_stop"]);
+
 export function permissionLine(): string {
   return "Do you want me to let your family know? Say yes or no.";
 }

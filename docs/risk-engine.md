@@ -45,6 +45,34 @@ Errors: 400 invalid body, 404 unknown trip or window, 409 ended trip or duplicat
 - `sharing_mode: "never"` on the driver turns `notify_contacts` into `ask_permission_to_notify`. `sharing_mode` is an optional field on `POST /trips` (the spec has the column but no way to set it).
 - Smoothing applies to numeric signals; booleans and `longest_eye_closure_s` use the newest window so a microsleep isn't averaged away.
 
+## Adaptive recommendations (contextual bandit)
+
+A learning layer that picks **which** intervention the driver hears, within the tier the decision tree already chose. It never changes tiers, thresholds, overrides, cooldowns or `actions`, and tier 3 is never learned.
+
+Code: `backend/src/bandit/`. Config: `bandit/bandit.json` (alpha, 120 s reward delay, reward scale and adjustments, context caps, the action table and per-tier defaults). Enable with `TIGER_DATABASE_URL` (Tiger Data = Postgres + TimescaleDB; needs `DATABASE_URL` too). Unset = off, and responses are exactly as before.
+
+| File | Role |
+|---|---|
+| `linucb.ts` | LinUCB over (A, b, x, r): init, solve (Gaussian elimination, no explicit inverse), UCB score, choose, update. Pure. |
+| `reward.ts` | Reward from before/after target levels plus adjustments, the 8-value context vector, allowed actions per tier and dominant. Pure. |
+| `service.ts` | `select` (tier 1/2 voice action -> intervention) and `processRewards` (runs on every incoming window, no worker). |
+| `store.ts` | `bandit_events` (hypertable on `ts` when TimescaleDB is present) and `bandit_models`. |
+
+- `POST /trips/{id}/windows` gains `intervention: {id, event_ts, learned}`, only on a tier 1 or 2 voice action. `learned` is false when the default was picked and the driver has no updates for those actions. The client uses `intervention.id` to choose the ElevenLabs script.
+- `GET /drivers/{id}/policy` -> `{driver_id, actions: [{action, updates, mean_reward}]}`. 404 when the bandit is off.
+- Context `x` (d = 8, all 0..1): bias, drowsy, agitated, speeding, trip minutes / 120, night (22:00-05:59 server local time), kids in car, interventions this trip / 5.
+- Reward, 120 s after the intervention: `clamp((mean target before - mean target after) / 0.3, -1, 1)`, +1 if the driver stopped (speed 0 for 60 s) after a drowsy intervention, -0.5 on `false_alarm` feedback, -0.5 if the tier went up; clamped to [-1, 2]. No reward and no update when the trip ended first, the face was hidden for most of the period, or there are no windows to compare.
+- Before/after levels are read from the `windows` table in `DATABASE_URL` (not migrated). The first 6 baseline windows carry no levels and are skipped.
+- Model updates are serialized per driver inside the process; two backend instances sharing one database would still need a database-level lock.
+- `family_voice_warning` is only offered when `ELEVENLABS_FAMILY_VOICE_ID` is set (one recorded voice for the app). The orchestrator speaks that action with this voice.
+- Deviations from the spec: the linear algebra is plain TypeScript (this backend has no numpy); `bandit_events` has an extra `false_alarm` column so feedback survives until the reward is computed.
+
 ## In-process bridge
 
-`RiskService` takes an `onEvaluation` hook. `index.ts` passes `orchestrator.onRiskEvaluation`, which maps tier 1/2/3 to the existing 40/70/85 voice and iMessage path (`onAlert`) when the engine returned a voice action. The sharing decision there still follows the phone's `sharingMode`; the engine's own `notify` actions are advisory for REST clients.
+`RiskService` takes an `onEvaluation(tripId, evaluation, intervention?)` hook. `index.ts` passes `orchestrator.onRiskEvaluation`, which maps tier 1/2/3 to the existing 40/70/85 voice and iMessage path (`onAlert`) and carries out what the engine asked for:
+
+- A `voice_*` action speaks a line. For tier 1/2 with a bandit intervention it is that action's script (`voice/lines.ts`, `interventionLine`); otherwise the generic `alertLine`. Only `suggest_rest_stop` listens for a yes/no (yes navigates to a rest stop); other interventions do not listen, so a free-form reply is not relayed to the group chat.
+- `notify_contacts` posts the guardian alert (and starts the roast for drowsy), `ask_permission_to_notify` asks the driver. Both come from the engine, so its 10 min notify cooldown applies; before, the orchestrator re-posted at every tier 3 voice action.
+- The legacy phone `alert` path is unchanged: it still decides from the phone's `sharingMode`.
+
+Guardians who ask the Photon agent "what works for Alex" get the bandit's best action (at least 2 updates and a positive mean reward) as an extra fact, unless sharing is off.

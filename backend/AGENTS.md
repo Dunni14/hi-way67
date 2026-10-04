@@ -10,6 +10,7 @@ Node / TypeScript backend for Driver Guardian (MHacks 26). It talks to the Andro
 - `src/agent/`: Spectrum connection (`spectrum.ts`), classifier, answers, roast, contacts allowlist, driver intent regexes.
 - `src/voice/`: ElevenLabs TTS, the one-at-a-time driver speech queue, spoken line templates.
 - `src/risk/`: logistic risk engine (pure core, service, Postgres store). `src/http/risk.ts`: its REST routes.
+- `src/bandit/`: adaptive recommendations (LinUCB over the tier the risk engine chose; pure math, service, Tiger Data store; config in `bandit.json`). Needs `TIGER_DATABASE_URL`. Never touches tiers or cooldowns.
 - `src/trip/`: live trip state, and the `TripStore` interface. The only implementation is in-memory; Tiger Data is a TODO.
 - `src/llm/openrouter.ts`: LLM client. Every LLM call has a non-LLM fallback. Keep it that way so the demo never stalls.
 - `src/dev/`: `fakePhone.ts` (simulates the Android app) and `smokeTts.ts`.
@@ -22,6 +23,7 @@ The phone can either send its own `R` / `alert` frames (legacy path) or call the
 - `NO_SPECTRUM=1 npm run dev`: phone side only, no iMessage.
 - `npm run fake-phone` runs the scripted demo. Add `-- -i` for interactive mode (`win`, `alert`, `say`, …; see `../docs/backend.md`).
 - `npm run smoke:tts`: writes one mp3 per voice tier to `out/`.
+- `TIGER_DATABASE_URL=… npm run smoke:tiger`: end-to-end check against a real Tiger Data instance (creates tables, runs one throwaway trip through the engine and bandit, deletes its rows). See `.env.example` for the TLS note.
 - `npm run typecheck`: run this after every change.
 - `npm test`: risk engine unit and HTTP tests (in-process Postgres via PGlite, no server needed).
 

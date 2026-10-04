@@ -1,0 +1,30 @@
+{
+  "alpha": 0.5,
+  "defaultBias": 0.5,
+  "rewardDelayS": 120,
+  "rewardScale": 0.3,
+  "beforeWindows": 2,
+  "afterWindows": 3,
+  "windowS": 10,
+  "stopS": 60,
+  "faceHiddenMajority": 0.5,
+  "context": { "tripMinutesFull": 120, "interventionsFull": 5, "nightStartHour": 22, "nightEndHour": 6 },
+  "adjustments": { "stopped": 1, "falseAlarm": -0.5, "tierUp": -0.5 },
+  "rewardMin": -1,
+  "rewardMax": 2,
+  "defaults": {
+    "1": { "drowsy": "calm_checkin", "reckless": "calm_slowdown" },
+    "2": { "drowsy": "firm_warning", "reckless": "firm_warning" }
+  },
+  "actions": {
+    "calm_checkin": { "tiers": [1], "dominant": "drowsy" },
+    "start_conversation": { "tiers": [1, 2], "dominant": "drowsy" },
+    "suggest_music": { "tiers": [1], "dominant": "drowsy" },
+    "suggest_rest_stop": { "tiers": [1, 2], "dominant": "drowsy" },
+    "calm_slowdown": { "tiers": [1], "dominant": "reckless" },
+    "breathing_prompt": { "tiers": [1, 2], "dominant": "reckless" },
+    "report_card_reminder": { "tiers": [1], "dominant": "reckless" },
+    "firm_warning": { "tiers": [2], "dominant": "both" },
+    "family_voice_warning": { "tiers": [2], "dominant": "both", "requiresFamilyVoice": true }
+  }
+}

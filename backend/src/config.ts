@@ -27,6 +27,8 @@ export const config = {
     apiKey: () => required("ELEVENLABS_API_KEY"),
     voiceId: optional("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"),
     modelId: optional("ELEVENLABS_MODEL_ID", "eleven_flash_v2_5"),
+    // Recorded family-member voice for the bandit's family_voice_warning. Unset = that action is never offered.
+    familyVoiceId: optional("ELEVENLABS_FAMILY_VOICE_ID"),
   },
 
   openRouter: {
@@ -40,6 +42,8 @@ export const config = {
 
   // Postgres (Tiger Data / Timescale compatible). Unset = risk REST API disabled.
   databaseUrl: optional("DATABASE_URL"),
+  // Tiger Data for the adaptive-recommendation bandit. Unset = bandit off (needs DATABASE_URL too).
+  tigerDatabaseUrl: optional("TIGER_DATABASE_URL"),
 
   roastWindowMs: 3 * 60_000,
 };
