@@ -1,6 +1,11 @@
 # Android app
 
-**Status: Partial (early prototype).** Code: [`android/`](../android). This page covers what the app does today and what it still needs in order to fit the backend. The design comes from the [root README](../README.md); the wire format is in [protocol.md](protocol.md). Build instructions: [`android/AGENTS.md`](../android/AGENTS.md).
+There are two Android projects:
+
+- **[`frontend/`](../frontend): the Driver Guardian app.** It handles sensing, the risk score, the decision tree, alarm, report card, voice playback and mic replies, and it talks to the backend. Brief: [`frontend/frontend.md`](../frontend/frontend.md); build and run: [`frontend/README.md`](../frontend/README.md). Status: [status.md](status.md) (rows marked **Built**).
+- **[`android/`](../android): CoolVitals**, the standalone Presage demo with the face-metrics debug overlay. It's kept as an SDK reference and doesn't talk to the backend. The rest of this page describes it, together with the original phone spec that `frontend/` implements.
+
+**CoolVitals status: Partial (prototype).** The design comes from the [root README](../README.md); the wire format is in [protocol.md](protocol.md). Build instructions: [`android/AGENTS.md`](../android/AGENTS.md).
 
 Stack: native Kotlin, Presage SmartSpectra SDK 3.4.0, min SDK 28 / target 36, installed over USB. Planned additions: Android `SpeechRecognizer`, OkHttp (or similar) for the WebSocket.
 
