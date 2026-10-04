@@ -441,8 +441,10 @@ private fun TripRow(t: TripSummary, onOpen: (() -> Unit)?) {
         Text(t.grade, color = gradeColor(t.grade), fontSize = 36.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(44.dp))
         Column(Modifier.weight(1f)) {
             Text(date + if (t.demo) " · demo" else "", color = OnSurface, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+            val speeds = listOfNotNull(t.avgSpeedMph?.let { "avg %.0f mph".format(it) }, t.topSpeedMph?.let { "top %.0f mph".format(it) })
+            Text((listOf("${t.durationMin} min") + speeds).joinToString(" · "), color = SystemText, style = Label, maxLines = 1)
             Text(
-                "${t.durationMin} min · avg risk %.0f · peak %.0f · ".format(t.avgRisk, t.peakRisk) + if (t.alerts == 1) "1 alert" else "${t.alerts} alerts",
+                "avg risk %.0f · peak %.0f · ".format(t.avgRisk, t.peakRisk) + if (t.alerts == 1) "1 alert" else "${t.alerts} alerts",
                 color = SystemText, style = Label, maxLines = 1,
             )
         }

@@ -213,7 +213,7 @@ class TripController(app: Application) : AndroidViewModel(app) {
             val card = ReportCard.build(samples.toList())
             _report.value = card
             if (card != null) {
-                val updated = TripHistory.add(_history.value, TripSummary.of(card, System.currentTimeMillis(), tripDemo))
+                val updated = TripHistory.add(_history.value, TripSummary.of(card, System.currentTimeMillis(), tripDemo, speed))
                 _history.value = updated
                 viewModelScope.launch { historyStore.save(updated) }
             }

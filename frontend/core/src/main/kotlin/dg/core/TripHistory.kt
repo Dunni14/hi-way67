@@ -14,10 +14,14 @@ data class TripSummary(
     val peakRisk: Double,
     val alerts: Int, // spoken alerts across all tiers
     val demo: Boolean = false,
+    // Null on trips saved before speeds were recorded, or when no speed reading came in.
+    val avgSpeedMph: Double? = null,
+    val topSpeedMph: Double? = null,
 ) {
     companion object {
-        fun of(card: ReportCard, endedAtMs: Long, demo: Boolean) = TripSummary(
+        fun of(card: ReportCard, endedAtMs: Long, demo: Boolean, speed: SpeedTracker? = null) = TripSummary(
             endedAtMs, card.durationMin, card.grade, card.avgRisk, card.peakRisk, card.alertsByTier.values.sum(), demo,
+            avgSpeedMph = speed?.avg, topSpeedMph = speed?.top,
         )
     }
 }

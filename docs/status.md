@@ -100,7 +100,7 @@ The tree is split between phone and backend. See [architecture.md](architecture.
 | Every 10 s window persisted | Done (backend) | Each phone window is stored by the risk engine (`windows`, `events` hypertables on Tiger Data via `DATABASE_URL`; in-memory fake DB when unset). |
 | Report card: line chart, letter grade, advice | Built | Phone `ReportCardScreen`, built from the engine's evaluations. The engine also serves `GET /trips/{id}/report`. |
 | End-of-trip summary popup | Built | When a trip ends the phone shows a popup with duration, average speed, top speed and alertness (100 minus the trip's average risk; GREAT / GOOD / LOW), with a button to the full report card. Speeds come from the phone's GPS; alertness needs the engine's scores. It replaces the automatic jump to the report card. Not yet checked on a device. |
-| Trip history | Built | Stats tab lists finished trips, newest first (date, grade, duration, average and peak risk, alert count); the latest reopens its report card. Up to 50 summaries are kept on the phone (`TripHistoryStore`, a JSON file); only trips the engine scored are recorded. Not yet checked on a device. |
+| Trip history | Built | Stats tab lists finished trips, newest first (date, grade, duration, average and top speed, average and peak risk, alert count); the latest reopens its report card. Up to 50 summaries are kept on the phone (`TripHistoryStore`, a JSON file); only trips the engine scored are recorded. Not yet checked on a device. |
 | Weekly trends | Not started | |
 
 ## 8. Surroundings (stretch)
