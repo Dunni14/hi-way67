@@ -11,10 +11,20 @@
 // composure (agitated). Confidence is scoredWindows / fullConfidenceWindows, capped at 1.
 import type { RiskConfig } from "./config.ts";
 import { EXPRESSIONS, type Expression, type Observation } from "./expression.ts";
-import type { Evaluation, Tier } from "./types.ts";
+import type { Action, Evaluation, Override, SignalWindow, Tier } from "./types.ts";
 
-export type CardWindow = { ts: string; score: number; tier: Tier; result: Evaluation; raw: { phone_in_hand?: boolean | null; hard_brakes?: number | null; swerves?: number | null } };
+export type CardWindow = { ts: string; score: number; tier: Tier; result: Evaluation; raw: SignalWindow };
 export type CardContext = { kidsInCar: boolean; lowExperience: boolean };
+/** Facts from outside the windows: the trip's events, the driver's baseline and the feedback they gave. */
+export type CardExtra = {
+  events?: { actions: Action[]; override: Override | null }[];
+  baselineHr?: number | null;
+  sharingMode?: string | null;
+  feedback?: { confirmed: number; false_alarm: number };
+};
+
+const WINDOW_S = 10;
+const BUCKET_MS = 30_000;
 
 export const CATEGORIES = ["attention", "speed", "smoothness", "alertness", "composure"] as const;
 export type Category = (typeof CATEGORIES)[number];
@@ -34,6 +44,35 @@ export type ReportCard = {
   /** Fixed-order numeric vector for offline learning; names in `feature_names`. */
   features: number[];
   feature_names: string[];
+  metrics: Metrics;
+  /** 30 s buckets (peak score, highest tier) so a report survives the raw-window retention. */
+  series: { ts: string; score: number; tier: Tier }[];
+  sharing_mode: string | null;
+  /** Set by the service when the trip ends: the driver's profile around this trip. */
+  profile: { care_before: number; care_after: number; notify_threshold: number } | null;
+};
+
+export type Metrics = {
+  duration_s: number;
+  night_trip: boolean;
+  distance_mi: number;
+  avg_speed_mph: number;
+  max_speed_mph: number;
+  over_limit_s: number;
+  max_over_limit_mph: number;
+  max_risk: number;
+  max_tier: Tier;
+  tier_seconds: [number, number, number, number];
+  yawns: number;
+  longest_eye_closure_s: number;
+  gaze_off_road_s: number;
+  phone_s: number;
+  degraded_s: number;
+  hr_above_baseline_mean: number | null;
+  hr_above_baseline_peak: number | null;
+  interventions: Record<"voice_nudge" | "voice_warning" | "voice_urgent" | "notify_contacts" | "ask_permission_to_notify", number>;
+  overrides: Partial<Record<Override, number>>;
+  feedback: { confirmed: number; false_alarm: number };
 };
 
 export const FEATURE_NAMES = [
@@ -58,7 +97,56 @@ export function letterOf(score: number, cfg: RiskConfig): Letter {
   return score >= G.A ? "A" : score >= G.B ? "B" : score >= G.C ? "C" : score >= G.D ? "D" : "F";
 }
 
-export function buildCard(windows: CardWindow[], observations: Observation[], ctx: CardContext, cfg: RiskConfig): ReportCard {
+function buildMetrics(all: CardWindow[], scored: CardWindow[], extra: CardExtra): Metrics {
+  const num = (v: number | null | undefined) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+  const speeds = all.map((w) => w.raw.speed_mph).filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+  const over = all.map((w) => (w.raw.speed_mph != null && w.raw.speed_limit_mph != null ? Math.max(0, w.raw.speed_mph - w.raw.speed_limit_mph) : 0));
+  const tierSeconds: [number, number, number, number] = [0, 0, 0, 0];
+  for (const w of scored) tierSeconds[w.tier] += WINDOW_S;
+  const base = extra.baselineHr;
+  const hrAbove = base == null ? [] : scored.map((w) => w.raw.heart_rate).filter((v): v is number => typeof v === "number").map((hr) => Math.max(0, hr - base));
+  const interventions = { voice_nudge: 0, voice_warning: 0, voice_urgent: 0, notify_contacts: 0, ask_permission_to_notify: 0 };
+  const overrides: Partial<Record<Override, number>> = {};
+  for (const e of extra.events ?? []) {
+    for (const a of e.actions) if (a in interventions) interventions[a as keyof typeof interventions] += 1;
+    if (e.override) overrides[e.override] = (overrides[e.override] ?? 0) + 1;
+  }
+  const startHour = all[0] ? new Date(all[0].ts).getHours() : 12;
+  return {
+    duration_s: all.length * WINDOW_S,
+    night_trip: startHour >= 22 || startHour < 5,
+    distance_mi: round3(all.reduce((s, w) => s + (num(w.raw.speed_mph) * WINDOW_S) / 3600, 0)),
+    avg_speed_mph: round1(mean(speeds)),
+    max_speed_mph: round1(speeds.length ? Math.max(...speeds) : 0),
+    over_limit_s: over.filter((o) => o > 0).length * WINDOW_S,
+    max_over_limit_mph: round1(over.length ? Math.max(...over) : 0),
+    max_risk: round1(scored.length ? Math.max(...scored.map((w) => w.score)) : 0),
+    max_tier: scored.reduce<Tier>((m, w) => (w.tier > m ? w.tier : m), 0),
+    tier_seconds: tierSeconds,
+    yawns: scored.reduce((s, w) => s + num(w.raw.yawns), 0),
+    longest_eye_closure_s: round1(scored.reduce((m, w) => Math.max(m, num(w.raw.longest_eye_closure_s)), 0)),
+    gaze_off_road_s: round1(scored.reduce((s, w) => s + num(w.raw.gaze_off_road_s), 0)),
+    phone_s: scored.filter((w) => w.raw.phone_in_hand).length * WINDOW_S,
+    degraded_s: all.filter((w) => w.result.degraded || w.raw.face_visible === false).length * WINDOW_S,
+    hr_above_baseline_mean: hrAbove.length ? round1(mean(hrAbove)) : null,
+    hr_above_baseline_peak: hrAbove.length ? round1(Math.max(...hrAbove)) : null,
+    interventions,
+    overrides,
+    feedback: extra.feedback ?? { confirmed: 0, false_alarm: 0 },
+  };
+}
+
+function buildSeries(all: CardWindow[]): ReportCard["series"] {
+  const buckets = new Map<number, { score: number; tier: Tier }>();
+  for (const w of all) {
+    const key = Math.floor(Date.parse(w.ts) / BUCKET_MS) * BUCKET_MS;
+    const b = buckets.get(key) ?? { score: 0, tier: 0 as Tier };
+    buckets.set(key, { score: Math.max(b.score, w.score), tier: Math.max(b.tier, w.tier) as Tier });
+  }
+  return [...buckets].sort((a, b) => a[0] - b[0]).map(([k, v]) => ({ ts: new Date(k).toISOString(), score: round1(v.score), tier: v.tier }));
+}
+
+export function buildCard(windows: CardWindow[], observations: Observation[], ctx: CardContext, cfg: RiskConfig, extra: CardExtra = {}): ReportCard {
   const R = cfg.report;
   const scored = windows.slice(cfg.baselineWindows);
   const n = scored.length;
@@ -118,5 +206,9 @@ export function buildCard(windows: CardWindow[], observations: Observation[], ct
     },
     features,
     feature_names: FEATURE_NAMES,
+    metrics: buildMetrics(windows, scored, extra),
+    series: buildSeries(windows),
+    sharing_mode: extra.sharingMode ?? null,
+    profile: null,
   };
 }

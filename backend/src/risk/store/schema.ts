@@ -92,15 +92,45 @@ CREATE TABLE IF NOT EXISTS observations (
 );
 
 CREATE TABLE IF NOT EXISTS report_cards (
-  trip_id         TEXT PRIMARY KEY,
-  driver_id       TEXT NOT NULL,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-  formula_version INT NOT NULL,
-  score           DOUBLE PRECISION NOT NULL,
-  grade           TEXT NOT NULL,
-  confidence      DOUBLE PRECISION NOT NULL,
-  card            JSONB NOT NULL,
-  features        DOUBLE PRECISION[] NOT NULL
+  trip_id               TEXT PRIMARY KEY,
+  driver_id             TEXT NOT NULL,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  formula_version       INT NOT NULL,
+  score                 DOUBLE PRECISION NOT NULL,
+  grade                 TEXT NOT NULL,
+  confidence            DOUBLE PRECISION NOT NULL,
+  provisional           BOOLEAN NOT NULL DEFAULT FALSE,
+  scored_windows        INT NOT NULL DEFAULT 0,
+  duration_s            INT NOT NULL DEFAULT 0,
+  night_trip            BOOLEAN NOT NULL DEFAULT FALSE,
+  sharing_mode          TEXT,
+  mean_risk             DOUBLE PRECISION,
+  p90_risk              DOUBLE PRECISION,
+  max_risk              DOUBLE PRECISION,
+  tier0_s               INT NOT NULL DEFAULT 0,
+  tier1_s               INT NOT NULL DEFAULT 0,
+  tier2_s               INT NOT NULL DEFAULT 0,
+  tier3_s               INT NOT NULL DEFAULT 0,
+  microsleeps           INT NOT NULL DEFAULT 0,
+  distance_mi           DOUBLE PRECISION,
+  avg_speed_mph         DOUBLE PRECISION,
+  max_speed_mph         DOUBLE PRECISION,
+  over_limit_s          INT NOT NULL DEFAULT 0,
+  max_over_limit_mph    DOUBLE PRECISION,
+  hard_brakes           INT NOT NULL DEFAULT 0,
+  swerves               INT NOT NULL DEFAULT 0,
+  phone_s               INT NOT NULL DEFAULT 0,
+  yawns                 INT NOT NULL DEFAULT 0,
+  longest_eye_closure_s DOUBLE PRECISION,
+  gaze_off_road_s       DOUBLE PRECISION,
+  degraded_s            INT NOT NULL DEFAULT 0,
+  dominant_expression   TEXT,
+  notify_threshold      DOUBLE PRECISION,
+  care_before           DOUBLE PRECISION,
+  care_after            DOUBLE PRECISION,
+  card                  JSONB NOT NULL,
+  series                JSONB NOT NULL,
+  features              DOUBLE PRECISION[] NOT NULL
 );
 CREATE INDEX IF NOT EXISTS report_cards_driver_idx ON report_cards (driver_id, created_at DESC);
 
@@ -117,4 +147,14 @@ CREATE TABLE IF NOT EXISTS decision_log (
   reward_ts  TIMESTAMPTZ,
   PRIMARY KEY (trip_id, ts)
 );
+CREATE OR REPLACE VIEW driver_scorecard AS
+SELECT driver_id,
+  count(*) FILTER (WHERE NOT provisional)::int AS scored_trips,
+  avg(score) FILTER (WHERE NOT provisional) AS avg_score,
+  avg(score) FILTER (WHERE NOT provisional AND created_at >= now() - INTERVAL '30 days') AS avg_score_30d,
+  count(*) FILTER (WHERE night_trip)::int AS night_trips,
+  coalesce(sum(distance_mi), 0) AS distance_mi,
+  coalesce(sum(duration_s), 0)::int AS duration_s,
+  max(created_at) AS last_trip_at
+FROM report_cards GROUP BY driver_id;
 `;

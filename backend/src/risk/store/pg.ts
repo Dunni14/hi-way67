@@ -1,6 +1,7 @@
 // Postgres-backed RiskStore. Works with `pg` (Pool/Client) in production and with
 // PGlite in tests: both expose `query(sql, params) -> { rows }`.
 import { SCHEMA_SQL } from "./schema.ts";
+import { TIMESCALE_SQL } from "./timescale.ts";
 import type { Baseline } from "../smoothing.ts";
 import type { Observation } from "../expression.ts";
 import type { DriverProfile } from "../profile.ts";
@@ -67,6 +68,28 @@ export class PgRiskStore implements RiskStore {
   async migrate() {
     // One statement at a time: simple-protocol multi-statement support differs between drivers.
     for (const stmt of SCHEMA_SQL.split(";").map((s) => s.trim()).filter(Boolean)) await this.db.query(stmt);
+  }
+
+  /**
+   * Hypertables, continuous aggregates, retention and compression. Only on TimescaleDB; elsewhere (plain
+   * Postgres, PGlite) it does nothing. A failing step is logged and skipped so a restricted role or an older
+   * TimescaleDB never blocks boot. Returns whether the extension is present.
+   */
+  async migrateTimescale(log: (msg: string) => void = console.warn) {
+    try {
+      const { rows } = await this.db.query(`SELECT 1 FROM pg_extension WHERE extname = 'timescaledb'`);
+      if (!rows.length) return false;
+    } catch {
+      return false;
+    }
+    for (const stmt of TIMESCALE_SQL) {
+      try {
+        await this.db.query(stmt);
+      } catch (err) {
+        log(`[risk] timescale step skipped (${(err as Error).message}): ${stmt.replace(/\s+/g, " ").slice(0, 70)}`);
+      }
+    }
+    return true;
   }
 
   async upsertDriver(id: string, sharingMode?: SharingMode) {
@@ -193,13 +216,28 @@ export class PgRiskStore implements RiskStore {
   }
 
   async saveCard(c: CardRow) {
+    const k = c.card;
+    const m = k.metrics;
+    const cols: [string, unknown, string?][] = [
+      ["trip_id", c.tripId], ["driver_id", c.driverId], ["created_at", c.createdAt], ["formula_version", k.formula_version],
+      ["score", k.score], ["grade", k.grade], ["confidence", k.confidence], ["provisional", k.provisional],
+      ["scored_windows", k.scored_windows], ["duration_s", m.duration_s], ["night_trip", m.night_trip], ["sharing_mode", k.sharing_mode],
+      ["mean_risk", k.components.mean_risk], ["p90_risk", k.components.p90_risk], ["max_risk", m.max_risk],
+      ["tier0_s", m.tier_seconds[0]], ["tier1_s", m.tier_seconds[1]], ["tier2_s", m.tier_seconds[2]], ["tier3_s", m.tier_seconds[3]],
+      ["microsleeps", k.components.microsleeps], ["distance_mi", m.distance_mi], ["avg_speed_mph", m.avg_speed_mph],
+      ["max_speed_mph", m.max_speed_mph], ["over_limit_s", m.over_limit_s], ["max_over_limit_mph", m.max_over_limit_mph],
+      ["hard_brakes", k.counts.hard_brakes], ["swerves", k.counts.swerves], ["phone_s", m.phone_s], ["yawns", Math.round(m.yawns)],
+      ["longest_eye_closure_s", m.longest_eye_closure_s], ["gaze_off_road_s", m.gaze_off_road_s], ["degraded_s", m.degraded_s],
+      ["dominant_expression", k.expression.dominant], ["notify_threshold", k.profile?.notify_threshold ?? null],
+      ["care_before", k.profile?.care_before ?? null], ["care_after", k.profile?.care_after ?? null],
+      ["card", JSON.stringify(k), "::jsonb"], ["series", JSON.stringify(k.series), "::jsonb"], ["features", k.features, "::double precision[]"],
+    ];
     await this.db.query(
-      `INSERT INTO report_cards (trip_id, driver_id, created_at, formula_version, score, grade, confidence, card, features)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::double precision[])
+      `INSERT INTO report_cards (${cols.map(([n]) => n).join(", ")}) VALUES (${cols.map(([, , cast], i) => `$${i + 1}${cast ?? ""}`).join(", ")})
        ON CONFLICT (trip_id) DO NOTHING`,
-      [c.tripId, c.driverId, c.createdAt, c.card.formula_version, c.card.score, c.card.grade, c.card.confidence, JSON.stringify(c.card), c.card.features],
+      cols.map(([, v]) => v),
     );
-    await this.db.query(`UPDATE trips SET grade = $2 WHERE trip_id = $1`, [c.tripId, c.card.grade]);
+    await this.db.query(`UPDATE trips SET grade = $2 WHERE trip_id = $1`, [c.tripId, k.grade]);
   }
 
   async getCard(tripId: string) {
@@ -223,5 +261,21 @@ export class PgRiskStore implements RiskStore {
       [tripId, ts, reward],
     );
     return (rows[0]?.action ?? null) as Action | null;
+  }
+
+  async feedbackCounts(tripId: string) {
+    const { rows } = await this.db.query(
+      `SELECT count(*) FILTER (WHERE reward > 0)::int AS confirmed, count(*) FILTER (WHERE reward < 0)::int AS false_alarm FROM decision_log WHERE trip_id = $1`,
+      [tripId],
+    );
+    return { confirmed: rows[0]?.confirmed ?? 0, false_alarm: rows[0]?.false_alarm ?? 0 };
+  }
+
+  async getScorecard(driverId: string) {
+    const { rows } = await this.db.query(`SELECT * FROM driver_scorecard WHERE driver_id = $1`, [driverId]);
+    const r = rows[0];
+    return r
+      ? { scored_trips: r.scored_trips, avg_score: r.avg_score, avg_score_30d: r.avg_score_30d, night_trips: r.night_trips, distance_mi: r.distance_mi, duration_s: r.duration_s, last_trip_at: iso(r.last_trip_at) }
+      : null;
   }
 }

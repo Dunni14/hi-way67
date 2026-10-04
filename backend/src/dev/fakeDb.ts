@@ -156,6 +156,7 @@ export async function openFakeDb(opts: { dir?: string; seed?: boolean } = {}): P
         }
       }
       await store.endTrip(tripId, new Date(start + (len + 1) * WINDOW_MS).toISOString());
+      await service.endTrip(tripId); // stores the report card and moves the driver's profile, like a real trip end
       seeded.trips++;
     }
   }

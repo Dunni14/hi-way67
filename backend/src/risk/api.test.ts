@@ -165,6 +165,13 @@ test("trip end stores a report card, observations and moves the driver profile",
   assert.equal(end.ended, true);
   assert.ok(end.card.score < 40 && end.card.confidence === 1 && !end.card.provisional);
   assert.equal(end.card.expression.dominant, "stressed");
+  assert.equal(end.card.metrics.duration_s, 700);
+  assert.ok(end.card.profile.care_after < end.card.profile.care_before);
+  const row = (await db.query(`SELECT * FROM report_cards WHERE trip_id = $1`, [t])).rows[0] as any;
+  assert.equal(row.score, end.card.score);
+  assert.equal(row.dominant_expression, "stressed");
+  assert.equal(row.tier0_s + row.tier1_s + row.tier2_s + row.tier3_s, 640);
+  assert.equal(row.care_after, end.card.profile.care_after);
 
   const obs = (await call("GET", `/trips/${t}/observations`)).body;
   assert.equal(obs.length, 70);

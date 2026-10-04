@@ -23,6 +23,8 @@ export type WindowRow = { tripId: string; ts: string; raw: SignalWindow; result:
 
 export type EventRow = { tripId: string; ts: string; tier: Tier; actions: Action[]; override: Override | null };
 
+export type Scorecard = { scored_trips: number; avg_score: number | null; avg_score_30d: number | null; night_trips: number; distance_mi: number; duration_s: number; last_trip_at: string };
+
 export type CardRow = { tripId: string; driverId: string; createdAt: string; card: ReportCard };
 
 /** One logged decision for later reinforcement learning: 8-number context, action taken, reward once known. */
@@ -54,6 +56,11 @@ export interface RiskStore {
 
   saveCard(c: CardRow): Promise<void>;
   getCard(tripId: string): Promise<CardRow | null>;
+
+  /** Per-driver rollup of stored report cards (the driver_scorecard view); null before the first card. */
+  getScorecard(driverId: string): Promise<Scorecard | null>;
+  /** How often the driver judged this trip's alerts. */
+  feedbackCounts(tripId: string): Promise<{ confirmed: number; false_alarm: number }>;
 
   addDecision(d: DecisionRow): Promise<void>;
   /** Sets the reward on the decision logged at (trip, ts); returns its action, or null if none. */

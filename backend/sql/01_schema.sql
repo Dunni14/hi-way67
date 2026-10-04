@@ -186,17 +186,59 @@ SELECT create_hypertable('observations', 'ts',
 
 -- One report card per ended trip. `features` is the fixed-order vector named in card.feature_names.
 CREATE TABLE IF NOT EXISTS report_cards (
-  trip_id         text PRIMARY KEY,
-  driver_id       text NOT NULL,
-  created_at      timestamptz NOT NULL DEFAULT now(),
-  formula_version int NOT NULL,
-  score           double precision NOT NULL,   -- 0..100, higher is better
-  grade           text NOT NULL,
-  confidence      double precision NOT NULL,
-  card            jsonb NOT NULL,
-  features        double precision[] NOT NULL
+  trip_id               text PRIMARY KEY,
+  driver_id             text NOT NULL,
+  created_at            timestamptz NOT NULL DEFAULT now(),
+  formula_version       int NOT NULL,
+  score                 double precision NOT NULL,
+  grade                 text NOT NULL,
+  confidence            double precision NOT NULL,
+  provisional           boolean NOT NULL DEFAULT FALSE,
+  scored_windows        int NOT NULL DEFAULT 0,
+  duration_s            int NOT NULL DEFAULT 0,
+  night_trip            boolean NOT NULL DEFAULT FALSE,
+  sharing_mode          text,
+  mean_risk             double precision,
+  p90_risk              double precision,
+  max_risk              double precision,
+  tier0_s               int NOT NULL DEFAULT 0,
+  tier1_s               int NOT NULL DEFAULT 0,
+  tier2_s               int NOT NULL DEFAULT 0,
+  tier3_s               int NOT NULL DEFAULT 0,
+  microsleeps           int NOT NULL DEFAULT 0,
+  distance_mi           double precision,
+  avg_speed_mph         double precision,
+  max_speed_mph         double precision,
+  over_limit_s          int NOT NULL DEFAULT 0,
+  max_over_limit_mph    double precision,
+  hard_brakes           int NOT NULL DEFAULT 0,
+  swerves               int NOT NULL DEFAULT 0,
+  phone_s               int NOT NULL DEFAULT 0,
+  yawns                 int NOT NULL DEFAULT 0,
+  longest_eye_closure_s double precision,
+  gaze_off_road_s       double precision,
+  degraded_s            int NOT NULL DEFAULT 0,
+  dominant_expression   text,
+  notify_threshold      double precision,
+  care_before           double precision,
+  care_after            double precision,
+  card                  jsonb NOT NULL,
+  series                jsonb NOT NULL,
+  features              double precision[] NOT NULL
 );
 CREATE INDEX IF NOT EXISTS report_cards_driver_idx ON report_cards (driver_id, created_at DESC);
+
+-- Per-driver rollup of report_cards (a plain view, so it works on any Postgres).
+CREATE OR REPLACE VIEW driver_scorecard AS
+SELECT driver_id,
+  count(*) FILTER (WHERE NOT provisional)::int AS scored_trips,
+  avg(score) FILTER (WHERE NOT provisional) AS avg_score,
+  avg(score) FILTER (WHERE NOT provisional AND created_at >= now() - INTERVAL '30 days') AS avg_score_30d,
+  count(*) FILTER (WHERE night_trip)::int AS night_trips,
+  coalesce(sum(distance_mi), 0) AS distance_mi,
+  coalesce(sum(duration_s), 0)::int AS duration_s,
+  max(created_at) AS last_trip_at
+FROM report_cards GROUP BY driver_id;
 
 -- Every window where the engine took an action: 8-number context, the most severe action, the notify
 -- threshold used, and the driver's feedback as reward (+1 / -1). Separate from bandit_events, which the

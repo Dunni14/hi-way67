@@ -119,3 +119,24 @@ test("a lower threshold texts a friend at tier 2, a higher one holds back a plai
   const micro = run({ longest_eye_closure_s: 2 }, 12, 101);
   assert.ok(micro.notified.some(Boolean));
 });
+
+test("card metrics: distance, time over the limit, tier seconds, interventions, series", () => {
+  const { windows, obs } = run({ speed_mph: 95, phone_in_hand: true, emotion_stress: 1, heart_rate: 100, yawns: 1 }, 40);
+  const events = windows.filter((w) => w.result.actions.some((a) => a !== "none")).map((w) => ({ actions: w.result.actions, override: w.result.override }));
+  const c = buildCard(windows, obs, ctx, cfg, { events, baselineHr: 70, sharingMode: "always", feedback: { confirmed: 1, false_alarm: 2 } });
+  const m = c.metrics;
+  assert.equal(m.duration_s, 400);
+  assert.equal(m.over_limit_s, 340); // 34 scored windows at 95 in a 70 zone
+  assert.equal(m.max_over_limit_mph, 25);
+  assert.equal(m.max_speed_mph, 95);
+  assert.equal(m.phone_s, 340);
+  assert.equal(m.yawns, 34);
+  assert.equal(m.tier_seconds.reduce((a, b) => a + b, 0), 340);
+  assert.ok(m.interventions.voice_urgent >= 1 && m.interventions.notify_contacts === 1);
+  assert.ok(m.hr_above_baseline_peak != null && m.hr_above_baseline_peak >= 20);
+  assert.deepEqual(m.feedback, { confirmed: 1, false_alarm: 2 });
+  assert.equal(c.sharing_mode, "always");
+  assert.ok(c.series.length >= 13 && c.series.length <= 14, `series ${c.series.length}`);
+  assert.ok(c.series.every((p, i, a) => i === 0 || p.ts > a[i - 1]!.ts));
+  assert.equal(m.max_tier, 3);
+});

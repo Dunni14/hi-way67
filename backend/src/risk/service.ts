@@ -151,10 +151,13 @@ export class RiskService {
     let stored = await this.store.getCard(tripId);
     if (!stored) {
       const card = await this.buildTripCard(trip);
+      const driver = await this.store.getDriver(trip.driverId);
+      const before = normalizeProfile(driver?.profile, this.cfg);
+      const after = applyCard(before, card, this.cfg);
+      card.profile = { care_before: before.careIndex, care_after: after.careIndex, notify_threshold: notifyThreshold(after, this.cfg) };
       stored = { tripId, driverId: trip.driverId, createdAt: new Date().toISOString(), card };
       await this.store.saveCard(stored);
-      const driver = await this.store.getDriver(trip.driverId);
-      await this.store.setProfile(trip.driverId, applyCard(normalizeProfile(driver?.profile, this.cfg), card, this.cfg));
+      await this.store.setProfile(trip.driverId, after);
     }
     return { trip_id: tripId, ended: true, card: stored.card };
   }
@@ -169,9 +172,9 @@ export class RiskService {
 
   async report(tripId: string) {
     const trip = await this.mustTrip(tripId);
-    const [windows, events] = await Promise.all([this.store.getWindows(tripId), this.store.getEvents(tripId)]);
-    const card = (await this.store.getCard(tripId))?.card ?? (await this.buildTripCard(trip));
-    return { trip_id: tripId, driver_id: trip.driverId, started_at: trip.startedAt, ended_at: trip.endedAt, ...summarize(windows), events, card };
+    const [windows, events, stored] = await Promise.all([this.store.getWindows(tripId), this.store.getEvents(tripId), this.store.getCard(tripId)]);
+    const card = stored?.card ?? (await this.buildTripCard(trip));
+    return { trip_id: tripId, driver_id: trip.driverId, started_at: trip.startedAt, ended_at: trip.endedAt, ...summaryOf(windows, stored?.card), events, card };
   }
 
   /** Stored card once the trip has ended, otherwise computed live from what has arrived so far. */
@@ -192,6 +195,7 @@ export class RiskService {
     return {
       driver_id: driverId,
       ...profile,
+      scorecard: await this.store.getScorecard(driverId),
       notify_threshold: notifyThreshold(profile, this.cfg),
       default_notify_threshold: this.cfg.tiers.urgent,
       weight_multipliers: { ...defaultMults(), ...driver.weightOverrides },
@@ -199,16 +203,27 @@ export class RiskService {
   }
 
   private async buildTripCard(trip: TripRow): Promise<ReportCard> {
-    const [windows, observations] = await Promise.all([this.store.getWindows(trip.id), this.store.getObservations(trip.id)]);
-    return buildCard(windows, observations, { kidsInCar: trip.kidsInCar, lowExperience: trip.lowExperience }, this.cfg);
+    const [windows, observations, events, driver, feedback] = await Promise.all([
+      this.store.getWindows(trip.id),
+      this.store.getObservations(trip.id),
+      this.store.getEvents(trip.id),
+      this.store.getDriver(trip.driverId),
+      this.store.feedbackCounts(trip.id),
+    ]);
+    return buildCard(windows, observations, { kidsInCar: trip.kidsInCar, lowExperience: trip.lowExperience }, this.cfg, {
+      events,
+      baselineHr: trip.baseline?.heartRate ?? null,
+      sharingMode: driver?.sharingMode ?? null,
+      feedback,
+    });
   }
 
   async driverTrips(driverId: string) {
     const trips = await this.store.listTrips(driverId);
     return Promise.all(
       trips.map(async (t) => {
-        const s = summarize(await this.store.getWindows(t.id));
         const card = (await this.store.getCard(t.id))?.card;
+        const s = summaryOf(await this.store.getWindows(t.id), card);
         return { trip_id: t.id, started_at: t.startedAt, ended_at: t.endedAt, max_score: s.max_score, grade: s.grade, card_score: card?.score ?? null, card_grade: card?.grade ?? null };
       }),
     );
@@ -228,6 +243,13 @@ export class RiskService {
 
 const SEVERITY: Action[] = ["none", "voice_nudge", "voice_warning", "voice_urgent", "ask_permission_to_notify", "notify_contacts"];
 const mostSevere = (actions: Action[]): Action => actions.reduce((a, b) => (SEVERITY.indexOf(b) > SEVERITY.indexOf(a) ? b : a), "none" as Action);
+
+/** From the raw windows while they exist; afterwards from the series and metrics stored on the report card. */
+function summaryOf(windows: { ts: string; score: number; tier: Tier }[], card: ReportCard | undefined) {
+  if (windows.length || !card) return summarize(windows);
+  const [t0, t1, t2, t3] = card.metrics.tier_seconds;
+  return { series: card.series, max_score: card.metrics.max_risk, time_in_tier_s: { 0: t0, 1: t1, 2: t2, 3: t3 } as Record<Tier, number>, grade: GRADES[card.metrics.max_tier] };
+}
 
 /** Series, max score, time per tier and letter grade (A: tier 0 only … D: reached tier 3). */
 function summarize(windows: { ts: string; score: number; tier: Tier }[]) {
