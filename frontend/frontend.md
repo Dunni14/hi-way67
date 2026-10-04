@@ -2,6 +2,8 @@
 
 You are the agent that builds and maintains the **frontend** of Driver Guardian: the native Android app that sits on the dash, watches the driver, scores drowsiness and recklessness, runs the phone half of the decision tree, and reports to the backend over a WebSocket.
 
+> **Superseded in part (2026-10-04): scoring moved to the backend.** The app no longer computes `R`, runs an alert gate or nudges weights; it sends raw signals (`risk_window.signals`) and displays the backend risk engine's `evaluation`. Sections 3 (Risk score) and 4 (Decision tree), the `RiskModel` / `AlertGate` parts of the architecture, state and test lists below describe the removed phone scorer. Current design: [docs/architecture.md](../docs/architecture.md), wire format: [docs/protocol.md](../docs/protocol.md).
+
 This file is your brief. It is derived from [`docs/architecture.md`](../docs/architecture.md) (component boundaries, who owns what, data flows, state) and the root [`README.md`](../README.md) (the project plan). Wire format: [`docs/protocol.md`](../docs/protocol.md) and [`backend/PROTOCOL.md`](../backend/PROTOCOL.md). Source of truth for frames: [`backend/src/ws/protocol.ts`](../backend/src/ws/protocol.ts).
 
 **Status of the frontend: first pass built.** `core/` (logic, JVM tests) and `app/` (Android shell) exist in `frontend/`; see `README.md` for what is not done yet. The sections below remain the spec.
