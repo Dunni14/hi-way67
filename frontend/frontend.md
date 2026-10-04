@@ -242,7 +242,8 @@ These live in a small settings sheet reachable by a deliberate tap while parked.
 The backend stores every window; the app's job is to **send each 10 s `risk_window` reliably**.
 
 - Buffer windows in memory while the socket is down (cap about 30 min, drop oldest) and flush in order on reconnect.
-- **Stretch:** report card screen after `trip_end`: risk over time as a line chart, a letter grade, one sentence of advice, computed locally from the windows the app held. Weekly trends are out of scope.
+- **Shared report.** After `trip_end` the backend sends a `report` frame with the image and a short summary it also posts to friends and family. `ReportCardScreen` shows it first (grade, score, summary, average and top speed, attention, the PNG), then the phone's own chart below.
+- **Phone-side summary:** report card screen after `trip_end`: risk over time as a line chart, a letter grade, one sentence of advice, computed locally from the windows the app held. Weekly trends are out of scope.
 
 ## 8. Surroundings (stretch)
 
@@ -275,6 +276,7 @@ Endpoint `ws://<backend-host>:8787/phone`. Make the host configurable (settings 
 |---|---|
 | `dismissed` | Weight nudge, stop alarm |
 | `navigate` `{query}` | `ACTION_VIEW` intent with `geo:0,0?q=<query>` |
+| `report` `{score, grade, summary, avg_speed_mph, top_speed_mph, attention_score, duration_s, distance_mi, image}` | Once after `trip_end`: keep it in `TripController.sharedReport`, jump to Stats and show the image (base64 PNG) and summary. It is what the backend shared with friends and family |
 | `error` `{message}` | Log |
 | `speak` `{id, text, tier, audio, listenAfterMs, context}` | `VoicePlayer`: play `audio` (mp3), or on-device TTS if empty; listen `listenAfterMs` and send `utterance` with the same `context`; always send `speak_done`. |
 

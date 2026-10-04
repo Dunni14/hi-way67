@@ -79,17 +79,18 @@ class MainActivity : ComponentActivity() {
         val voice by vm.voiceState.collectAsState()
         val settings by vm.settingsFlow.collectAsState()
         val report by vm.report.collectAsState()
+        val shared by vm.sharedReport.collectAsState()
         val parked = !ui.running || ui.speedMph < 3
         // Jump to the report card when a trip ends.
-        LaunchedEffect(report) { if (report != null) tab = "stats" }
+        LaunchedEffect(report, shared) { if (report != null || shared != null) tab = "stats" }
         // Leaving the parked state always brings the driver back to the Drive tab.
         LaunchedEffect(parked) { if (!parked) { tab = "drive"; showDebug = false } }
 
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f)) {
                 when (tab) {
-                    "stats" -> report?.let { ReportCardScreen(it) { tab = "drive" } }
-                        ?: PlaceholderScreen("Stats", "No trip yet. Start one on the Drive tab; its report card (grade, risk over time, advice) shows up here when it ends.")
+                    "stats" -> if (report != null || shared != null) ReportCardScreen(report, shared) { tab = "drive" }
+                        else PlaceholderScreen("Stats", "No trip yet. Start one on the Drive tab; its report card (grade, risk over time, advice) shows up here when it ends.")
                     "contacts" -> PlaceholderScreen(
                         "Contacts",
                         "Who gets alerts is set on the backend for now: contacts.json lists guardians (alerts and location) " +

@@ -70,3 +70,16 @@ test("a trip's report and history survive the raw windows being dropped", async 
   const hist: any = await fake.service.driverTrips("sam");
   assert.equal((hist.trips ?? hist).find((t: any) => t.trip_id === "fake-sam-6").grade, before.grade);
 });
+
+test("history rows carry average speed, top speed and attention score for every drive", async () => {
+  const rows = await fake.service.driverTrips("jo");
+  assert.equal(rows.length, 3);
+  for (const r of rows) {
+    assert.ok(r.avg_speed_mph! > 0 && r.top_speed_mph! >= r.avg_speed_mph!, JSON.stringify(r));
+    assert.ok(r.attention_score! >= 0 && r.attention_score! <= 100 && r.duration_s! > 0);
+  }
+  const sam = await fake.service.driverTrips("sam");
+  const phone = sam.find((t) => t.trip_id === "fake-sam-8")!; // phone-use trip
+  const calm = sam.find((t) => t.trip_id === "fake-sam-7")!;
+  assert.ok(phone.attention_score! < calm.attention_score! - 10, `phone ${phone.attention_score}, calm ${calm.attention_score}`);
+});

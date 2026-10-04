@@ -96,6 +96,10 @@ class TripController(app: Application) : AndroidViewModel(app) {
     private val _report = MutableStateFlow<ReportCard?>(null)
     val report: StateFlow<ReportCard?> = _report
 
+    /** The report the backend generated at trip end and shared with friends and family; arrives shortly after [endTrip]. */
+    private val _sharedReport = MutableStateFlow<BackendFrame.Report?>(null)
+    val sharedReport: StateFlow<BackendFrame.Report?> = _sharedReport
+
     /** Pacing of the current trip: [DemoClock] in demo mode, else real time. */
     private var clock: TripClock = RealClock
     private var tripStartMs = 0L
@@ -133,7 +137,7 @@ class TripController(app: Application) : AndroidViewModel(app) {
         val c: TripClock = if (demo) DemoClock else RealClock
         clock = c
         client.send(PhoneFrame.TripStart)
-        sentEvents.clear(); samples.clear(); _report.value = null
+        sentEvents.clear(); samples.clear(); _report.value = null; _sharedReport.value = null
         _ui.value = UiState(running = true, calibrating = true, calibrationLeftSec = (c.realMs(CALIBRATION_MS) / 1000).toInt())
 
         val agg = WindowAggregator()
@@ -217,6 +221,7 @@ class TripController(app: Application) : AndroidViewModel(app) {
                     _ui.value = _ui.value.copy(alarmOn = false, feedbackFactor = f.factor, feedbackMultiplier = f.multiplier)
                 }
                 is BackendFrame.Speak -> voice.play(f)
+                is BackendFrame.Report -> _sharedReport.value = f
                 is BackendFrame.Navigate -> onNavigate(f.query)
                 is BackendFrame.Error -> android.util.Log.w("Backend", f.message)
                 else -> {}

@@ -221,6 +221,7 @@ CREATE TABLE IF NOT EXISTS report_cards (
   distance_mi           double precision,
   avg_speed_mph         double precision,
   max_speed_mph         double precision,
+  attention_score       double precision,     -- card.categories.attention, 0..100
   over_limit_s          int NOT NULL DEFAULT 0,
   max_over_limit_mph    double precision,
   hard_brakes           int NOT NULL DEFAULT 0,
@@ -249,7 +250,10 @@ SELECT driver_id,
   count(*) FILTER (WHERE night_trip)::int AS night_trips,
   coalesce(sum(distance_mi), 0) AS distance_mi,
   coalesce(sum(duration_s), 0)::int AS duration_s,
-  max(created_at) AS last_trip_at
+  max(created_at) AS last_trip_at,
+  avg(attention_score) FILTER (WHERE NOT provisional) AS avg_attention,
+  avg(avg_speed_mph) FILTER (WHERE NOT provisional) AS avg_speed_mph,
+  max(max_speed_mph) AS top_speed_mph
 FROM report_cards GROUP BY driver_id;
 
 -- Every window where the engine took an action: 8-number context, the most severe action, the notify
