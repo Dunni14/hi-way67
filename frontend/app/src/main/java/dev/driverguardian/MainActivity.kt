@@ -30,7 +30,7 @@ import dev.driverguardian.ui.DashcamScreen
 import dev.driverguardian.ui.DriverGuardianColors
 import dev.driverguardian.ui.PlaceholderScreen
 import dev.driverguardian.ui.TabBar
-import dev.driverguardian.ui.TripHistoryScreen
+import dev.driverguardian.ui.StatsDashboard
 import dev.driverguardian.ui.DebugScreen
 import dev.driverguardian.ui.ReportCardScreen
 import dev.driverguardian.ui.SettingsScreen
@@ -93,7 +93,7 @@ class MainActivity : ComponentActivity() {
                     "stats" -> {
                         val card = report
                         if (card != null && reportOpen) ReportCardScreen(card) { reportOpen = false }
-                        else TripHistoryScreen(
+                        else StatsDashboard(
                             api = vm.history,
                             driverHint = settings.driverName,
                             onOpenLastReport = if (card != null) ({ reportOpen = true }) else null,

@@ -1,6 +1,7 @@
 package dev.driverguardian.net
 
 import android.net.Uri
+import dg.core.DriverStats
 import dg.core.History
 import dg.core.TripCard
 import dg.core.TripRow
@@ -27,6 +28,8 @@ class HistoryApi(private val host: () -> String) {
 
     /** The driver id the backend stores trips under (its current driver name). */
     suspend fun driverName(): String? = History.driverNameFromHealth(get("/health"))
+
+    suspend fun stats(driver: String): DriverStats = History.decodeStats(get("/drivers/${Uri.encode(driver)}/stats"))
 
     suspend fun trips(driver: String): List<TripRow> = History.decodeTrips(get("/drivers/${Uri.encode(driver)}/trips"))
 

@@ -73,6 +73,8 @@ export interface RiskStore {
 
   saveCard(c: CardRow): Promise<void>;
   getCard(tripId: string): Promise<CardRow | null>;
+  /** A driver's report cards created at or after sinceIso, oldest first. */
+  listCards(driverId: string, sinceIso: string): Promise<CardRow[]>;
 
   /** Per-driver rollup of stored report cards (the driver_scorecard view); null before the first card. */
   getScorecard(driverId: string): Promise<Scorecard | null>;

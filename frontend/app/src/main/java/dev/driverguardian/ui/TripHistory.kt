@@ -55,7 +55,7 @@ private fun tripDuration(t: TripRow): String? = runCatching {
  * stored under.
  */
 @Composable
-fun TripHistoryScreen(api: HistoryApi, driverHint: String, onOpenLastReport: (() -> Unit)?) {
+fun TripHistoryScreen(api: HistoryApi, driverHint: String, onOpenLastReport: (() -> Unit)?, onBack: (() -> Unit)? = null) {
     var trips by remember { mutableStateOf<List<TripRow>?>(null) }
     var driver by remember { mutableStateOf(driverHint) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -75,6 +75,7 @@ fun TripHistoryScreen(api: HistoryApi, driverHint: String, onOpenLastReport: (()
 
     Column(Modifier.fillMaxSize().background(ScreenBg).statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        onBack?.let { TextButton(onClick = it) { Text("‹ Stats", color = Main) } }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Trip history", color = OnSurface, fontSize = 22.sp, fontWeight = FontWeight.Medium)

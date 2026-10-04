@@ -225,6 +225,30 @@ class CoreTest {
         assertNull(History.driverNameFromHealth("""{"ok":true}"""))
     }
 
+    /** Shape captured from GET /drivers/Ray/stats on the live backend. */
+    @Test fun statsDecodesBackendJson() {
+        val s = History.decodeStats(
+            """{"driver_id":"Ray","days":7,"safety_score":88.7,"trips":10,"safe_trips":8,"risk_events":2,""" +
+                """"daily":[{"date":"2026-10-03","label":"Sat","score":null,"trips":0},{"date":"2026-10-04","label":"Sun","score":88.7,"trips":10}],""" +
+                """"attention":{"value":"GOOD","calm_share":0.923},"eye_tracking":{"value":"NORMAL","microsleeps":0,"longest_closure_s":0.6},""" +
+                """"avg_speed_mph":65,"distance_mi":16.8,"hard_brakes":0,"yawns":14,"night_share":0.5,""" +
+                """"tips":[{"title":"Watch for tiredness","detail":"14 yawns this week."}]}""",
+        )
+        assertEquals(88.7, s.safetyScore)
+        assertEquals(8, s.safeTrips)
+        assertEquals(listOf(null, 88.7), s.daily.map { it.score })
+        assertEquals("GOOD", s.attention.value)
+        assertEquals(0.923, s.attention.calmShare)
+        assertEquals("NORMAL", s.eyeTracking.value)
+        assertEquals(65.0, s.avgSpeedMph)
+        assertEquals(0.5, s.nightShare)
+        assertEquals("Watch for tiredness", s.tips.single().title)
+        // An empty week decodes too.
+        val empty = History.decodeStats("""{"driver_id":"x","days":7,"safety_score":null,"trips":0,"safe_trips":0,"risk_events":0,"daily":[],"attention":{"value":null,"calm_share":null},"eye_tracking":{"value":null,"microsleeps":0,"longest_closure_s":0},"avg_speed_mph":null,"distance_mi":0,"hard_brakes":0,"yawns":0,"night_share":null,"tips":[]}""")
+        assertNull(empty.safetyScore)
+        assertNull(empty.attention.value)
+    }
+
     @Test fun reconnectBackoff() {
         val p = ReconnectPolicy()
         assertEquals(listOf(1000L, 2000, 4000, 8000, 16000, 30000, 30000), List(7) { p.nextDelayMs() })

@@ -274,6 +274,14 @@ export class PgRiskStore implements RiskStore {
     return r ? ({ tripId: r.trip_id, driverId: r.driver_id, createdAt: iso(r.created_at), card: r.card } satisfies CardRow) : null;
   }
 
+  async listCards(driverId: string, sinceIso: string) {
+    const { rows } = await this.db.query(
+      `SELECT trip_id, driver_id, created_at, card FROM report_cards WHERE driver_id = $1 AND created_at >= $2 ORDER BY created_at ASC`,
+      [driverId, sinceIso],
+    );
+    return rows.map((r) => ({ tripId: r.trip_id, driverId: r.driver_id, createdAt: iso(r.created_at), card: r.card }) satisfies CardRow);
+  }
+
   async addDecision(d: DecisionRow) {
     await this.db.query(
       `INSERT INTO decision_log (ts, driver_id, trip_id, tier, dominant, action, context, scores)

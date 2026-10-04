@@ -59,7 +59,41 @@ data class TripCard(
     val series: List<CardPoint> = emptyList(),
 )
 
+// GET /drivers/{driver}/stats -> DriverStats: the last 7 days of report cards, summarized.
+@Serializable
+data class DailyStat(val date: String, val label: String, val score: Double? = null, val trips: Int = 0)
+
+@Serializable
+data class Rating(val value: String? = null, @SerialName("calm_share") val calmShare: Double? = null)
+
+@Serializable
+data class EyeStat(val value: String? = null, val microsleeps: Double = 0.0, @SerialName("longest_closure_s") val longestClosureS: Double = 0.0)
+
+@Serializable
+data class Tip(val title: String, val detail: String)
+
+@Serializable
+data class DriverStats(
+    @SerialName("driver_id") val driverId: String = "",
+    val days: Int = 7,
+    @SerialName("safety_score") val safetyScore: Double? = null,
+    val trips: Int = 0,
+    @SerialName("safe_trips") val safeTrips: Int = 0,
+    @SerialName("risk_events") val riskEvents: Int = 0,
+    val daily: List<DailyStat> = emptyList(),
+    val attention: Rating = Rating(),
+    @SerialName("eye_tracking") val eyeTracking: EyeStat = EyeStat(),
+    @SerialName("avg_speed_mph") val avgSpeedMph: Double? = null,
+    @SerialName("distance_mi") val distanceMi: Double = 0.0,
+    @SerialName("hard_brakes") val hardBrakes: Double = 0.0,
+    val yawns: Double = 0.0,
+    @SerialName("night_share") val nightShare: Double? = null,
+    val tips: List<Tip> = emptyList(),
+)
+
 object History {
+    fun decodeStats(json: String): DriverStats = FrameJson.decodeFromString(DriverStats.serializer(), json)
+
     fun decodeTrips(json: String): List<TripRow> = FrameJson.decodeFromString(ListSerializer(TripRow.serializer()), json)
     fun decodeCard(json: String): TripCard = FrameJson.decodeFromString(TripCard.serializer(), json)
 
