@@ -98,10 +98,10 @@ class DriveMap(private val context: Context, private val container: FrameLayout)
         private const val ZOOM = 17.5
         private val DEFAULT_CENTER: Point = Point.fromLngLat(-83.7430, 42.2808)
 
-        /** Mapbox Standard `basemap` import, light and monochrome to match the Drive tab. */
+        /** Mapbox Standard `basemap` import: daylight, full colour (the theme can also be "faded" or "monochrome"). */
         private val STANDARD_CONFIG: Map<String, Value> = mapOf(
             "lightPreset" to Value.valueOf("day"),
-            "theme" to Value.valueOf("monochrome"),
+            "theme" to Value.valueOf("default"),
             "showPointOfInterestLabels" to Value.valueOf(false),
             "showTransitLabels" to Value.valueOf(false),
             "showPlaceLabels" to Value.valueOf(false),
