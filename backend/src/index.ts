@@ -17,15 +17,34 @@ import { createRiskRoutes } from "./http/risk.ts";
 const store = new InMemoryTripStore();
 const { onPhone, onChat, onRiskEvaluation } = createOrchestrator(store);
 
-// Risk engine REST API; needs Postgres.
+// Risk engine REST API; needs Postgres. FAKE_DB=1 or an unreachable DATABASE_URL uses the local seeded one.
+async function openRiskStore(): Promise<PgRiskStore | undefined> {
+  if (config.databaseUrl && !config.fakeDb) {
+    const pool = new pg.Pool({ connectionString: config.databaseUrl, connectionTimeoutMillis: 5000 });
+    try {
+      const real = new PgRiskStore(pool);
+      await real.migrate();
+      console.log("[risk] REST API enabled (Postgres)");
+      return real;
+    } catch (err) {
+      console.warn(`[risk] DATABASE_URL unreachable (${(err as Error).message}); falling back to the local fake database`);
+      await pool.end().catch(() => {});
+    }
+  } else if (!config.fakeDb) {
+    return undefined;
+  }
+  const { openFakeDb } = await import("./dev/fakeDb.ts");
+  const fake = await openFakeDb({ dir: config.fakeDbDir });
+  console.log(`[risk] REST API enabled (fake in-process Postgres, ${fake.seeded.trips} trips / ${fake.seeded.windows} windows seeded)`);
+  return fake.store;
+}
+
 let riskRoutes: ReturnType<typeof createRiskRoutes> | undefined;
-if (config.databaseUrl) {
-  const riskStore = new PgRiskStore(new pg.Pool({ connectionString: config.databaseUrl }));
-  await riskStore.migrate();
+const riskStore = await openRiskStore();
+if (riskStore) {
   riskRoutes = createRiskRoutes(new RiskService(riskStore, undefined, (_tripId, ev) => onRiskEvaluation(ev)));
-  console.log("[risk] REST API enabled (Postgres)");
 } else {
-  console.log("[risk] REST API disabled (DATABASE_URL not set)");
+  console.log("[risk] REST API disabled (set DATABASE_URL or FAKE_DB=1)");
 }
 
 startPhoneServer(config.port, onPhone, () => ({

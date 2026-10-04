@@ -12,7 +12,7 @@ Node / TypeScript backend for Driver Guardian (MHacks 26). It talks to the Andro
 - `src/risk/`: logistic risk engine (pure core, service, Postgres store). `src/http/risk.ts`: its REST routes.
 - `src/trip/`: live trip state, and the `TripStore` interface. The only implementation is in-memory; Tiger Data is a TODO.
 - `src/llm/openrouter.ts`: LLM client. Every LLM call has a non-LLM fallback. Keep it that way so the demo never stalls.
-- `src/dev/`: `fakePhone.ts` (simulates the Android app) and `smokeTts.ts`.
+- `src/dev/`: `fakePhone.ts` (simulates the Android app), `smokeTts.ts`, and `fakeDb.ts` (seeded PGlite stand-in for Tiger).
 
 The phone can either send its own `R` / `alert` frames (legacy path) or call the risk engine REST API (`src/risk/`, `src/http/risk.ts`, needs `DATABASE_URL`), which computes score, tier and actions server-side. See [`../docs/risk-engine.md`](../docs/risk-engine.md). Presage runs on the phone.
 
@@ -23,6 +23,7 @@ The phone can either send its own `R` / `alert` frames (legacy path) or call the
 - `npm run fake-phone` runs the scripted demo. Add `-- -i` for interactive mode (`win`, `alert`, `say`, …; see `../docs/backend.md`).
 - `npm run smoke:tts`: writes one mp3 per voice tier to `out/`.
 - `npm run typecheck`: run this after every change.
+- `npm run dev:fake`: risk REST API on a seeded in-process Postgres (no Tiger, no `DATABASE_URL`). `npm run seed:fake` prints what it holds.
 - `npm test`: risk engine unit and HTTP tests (in-process Postgres via PGlite, no server needed).
 
 TypeScript runs straight from source with `tsx`, so there is no build step. Imports use explicit `.ts` extensions (`verbatimModuleSyntax`, `allowImportingTsExtensions`). `noUncheckedIndexedAccess` is on.
