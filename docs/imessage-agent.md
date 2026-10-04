@@ -36,7 +36,7 @@ DM spaces are cached per contact as they arrive. `dm()` creates a new iMessage D
 
 | Role | Can ask questions | Gets location | Gets 85-tier alerts | Can message / roast driver |
 |---|---|---|---|---|
-| Guardian | Yes | Yes (in answers and alerts) | Yes, by DM | Yes |
+| Guardian | Yes | Yes (in answers and alerts), unless the driver turned location sharing off. See [gps.md](gps.md#photon-imessage-agent) | Yes, by DM | Yes |
 | Friend | Yes, without location | No | No (sees only the roast call in the group) | Yes |
 
 ## Message handling

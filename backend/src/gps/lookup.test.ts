@@ -6,7 +6,7 @@ import { placeName, reverseGeocode } from "./geocode.ts";
 import { RestStopFinder, pickStop } from "./restStop.ts";
 import { buildGpsCard } from "./route.ts";
 import { limitForWay, parseMaxspeed, pickWay, SpeedLimitProvider } from "./speedLimit.ts";
-import type { FetchLike, OsmElement } from "./overpass.ts";
+import { overpass, type FetchLike, type OsmElement } from "./overpass.ts";
 import { mphToMps } from "./types.ts";
 
 const cfgWith = (lookup: Partial<typeof riskConfig.gps.lookup>) => ({ ...riskConfig, gps: { ...riskConfig.gps, lookup: { ...riskConfig.gps.lookup, ...lookup } } });
@@ -106,6 +106,20 @@ test("the backup endpoint answers when the primary fails", async () => {
   p.lookup("t", 42.28, -83.74, 90);
   await p.idle();
   near(p.lookup("t", 42.28, -83.74, 90).limit_mps, mphToMps(30));
+});
+
+test("an endpoint that just failed is skipped, so a dead primary costs one timeout", async () => {
+  const urls: string[] = [];
+  const good = eastWestWay({ highway: "primary", maxspeed: "30 mph" });
+  const fetch: FetchLike = async (url, init) => {
+    urls.push(url);
+    if (url.includes("dead-primary")) throw new Error("down");
+    return good(url, init);
+  };
+  const query = { timeoutMs: 100, fetch, endpoints: ["http://dead-primary", "http://live-backup"] };
+  await overpass("way(around:25,42.28,-83.74);", query);
+  await overpass("way(around:25,42.28,-83.74);", query);
+  assert.deepEqual(urls, ["http://dead-primary", "http://live-backup", "http://live-backup"]);
 });
 
 test("trips do not share a last known limit", async () => {

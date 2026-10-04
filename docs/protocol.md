@@ -13,18 +13,19 @@ There is no authentication. Only one phone connection is kept. A new connection 
 ### `hello`
 Send on connect.
 ```json
-{ "type": "hello", "driverName": "Alex", "sharingMode": "high_only", "kidsInCar": false }
+{ "type": "hello", "driverName": "Alex", "sharingMode": "high_only", "kidsInCar": false, "shareLocation": true }
 ```
 | Field | Type | Default |
 |---|---|---|
 | `driverName` | string, optional | keeps `DRIVER_NAME` |
 | `sharingMode` | `"always" \| "high_only" \| "never"` | `"high_only"` |
 | `kidsInCar` | boolean | `false` |
+| `shareLocation` | boolean. `false`: no position ever reaches the iMessage agent (see [gps.md](gps.md#privacy)) | `true` |
 
 ### `settings`
 Send when a toggle changes. Every field is optional.
 ```json
-{ "type": "settings", "sharingMode": "always", "kidsInCar": true }
+{ "type": "settings", "sharingMode": "always", "kidsInCar": true, "shareLocation": false }
 ```
 
 ### `trip_start` / `trip_end`
@@ -137,7 +138,7 @@ backend → speak {"Sent."}
 ```
 phone   → alert {tier 85, drowsy}       (sharing always / high_only)
 backend → speak urgent line
-(guardians) ⚠️ Alex is at high risk (drowsy)… Location: <maps link>
+(guardians) ⚠️ Alex is at high risk (drowsy)… 📍 near State St, Ann Arbor · 58 mph · fix at 5:26 AM + <Apple Maps link>
 (group)     🚨 Alex has yawned 3 times … Roast Alex awake!
 (group) Sam: "bro is hibernating"
 backend → speak {"Sam says: bro is hibernating", roast, 5000}   (priority)

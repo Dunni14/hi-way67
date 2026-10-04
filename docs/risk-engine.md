@@ -29,18 +29,22 @@ window ─> smooth (3) ─> state levels ─> z = Σ w·x (capped ln 50) ─> R 
 
 | Method and path | Purpose |
 |---|---|
-| `POST /trips` | Start a trip: `{driver_id, kids_in_car, low_experience, sleep_hours?, sharing_mode?}` -> `{trip_id}` |
-| `POST /trips/{id}/windows` | One signal window every 10 s -> `{score, tier, dominant, actions, levels, override, degraded}` |
+| `POST /trips` | Start a trip: `{driver_id, kids_in_car, low_experience, sleep_hours?, sharing_mode?, share_location?}` -> `{trip_id}` |
+| `POST /trips/{id}/windows` | One signal window every 10 s, optionally with `gps: {fixes: [...]}` (see [gps.md](gps.md)) -> `{score, tier, dominant, actions, levels, override, degraded, gps?}`. `gps` is `{ok, speed_mps, limit_mph, limit_source, stopped, moving, trip_ended?}`, no coordinates |
 | `POST /trips/{id}/feedback` | `{window_ts, verdict: "false_alarm" \| "confirmed"}`; scales the dominant factor's weight x0.95 / x1.05, clamped 0.5x..1.5x, per driver |
 | `POST /trips/{id}/end` | Close the trip; writes the report card once and updates the driver profile -> `{trip_id, ended, card}` |
 | `GET /trips/{id}/state` | Latest response object (for the Photon agent) |
 | `GET /trips/{id}/report` | Series, events, max score, seconds per tier, grade A-D (max tier), plus `card` |
-| `GET /trips/{id}/card` | Report card: stored after the trip ended, computed live before |
+| `GET /trips/{id}/card` | Report card: stored after the trip ended, computed live before. `gps` holds the route, alert markers and limit stats |
 | `GET /trips/{id}/observations` | The stored expression label for every window |
 | `GET /drivers/{id}/trips` | Past trips with grades and `card_score` / `card_grade` |
 | `GET /drivers/{id}/profile` | `careIndex`, `scoredTrips`, `learnedShift`, current `notify_threshold`, weight multipliers |
 
 Errors: 400 invalid body, 404 unknown trip or window, 409 ended trip or duplicate `ts`.
+
+## GPS
+
+The window takes an optional `gps` field: up to 10 fixes (`t, lat, lon, speed_mps, heading_deg, h_accuracy_m`). Absent keeps the legacy `speed_mph` / `speed_limit_mph` formula; `null` or present makes GPS authoritative for `speeding` (0 without good fixes or a known limit) and adds `erratic_gps`. A trip also starts and ends itself from GPS speed. Everything, including the thresholds, the posted-limit lookup, storage and privacy, is in [gps.md](gps.md).
 
 ## Behavior notes
 

@@ -130,7 +130,7 @@
     },
     "lookup": {
       "radiusM": 25,
-      "timeoutMs": 4000,
+      "timeoutMs": 6000,
       "cacheMax": 5000,
       "cacheTtlS": 86400,
       "failureBackoffS": 30,

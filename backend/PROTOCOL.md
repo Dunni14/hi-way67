@@ -7,8 +7,8 @@ Source of truth: [src/ws/protocol.ts](src/ws/protocol.ts). Health check: `GET /h
 
 | type | fields | when |
 |---|---|---|
-| `hello` | `driverName?`, `sharingMode` (`always`/`high_only`/`never`), `kidsInCar` | on connect |
-| `settings` | `sharingMode?`, `kidsInCar?` | toggle changed |
+| `hello` | `driverName?`, `sharingMode` (`always`/`high_only`/`never`), `kidsInCar`, `shareLocation` (default `true`) | on connect |
+| `settings` | `sharingMode?`, `kidsInCar?`, `shareLocation?` | toggle changed |
 | `trip_start` / `trip_end` | none | trip begins / ends |
 | `risk_window` | `ts` (epoch ms), `R`, `drowsy`, `reckless` (0–100), `speed` (mph), `lat?`, `lon?`, `events[]` (`yawn`,`nod`,`hard_brake`,`swerve`), `features?` | every 10 s |
 | `alert` | `tier` (40/70/85), `dominant` (`drowsy`/`reckless`), `R` | decision tree fires (after the 15 s hold and cooldown) |

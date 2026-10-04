@@ -15,6 +15,7 @@ Technical documentation for the code in this repository. The product pitch, trac
 | [imessage-agent.md](imessage-agent.md) | Photon Spectrum agent: roles, message classification, the four flows, the roast, sharing modes |
 | [voice.md](voice.md) | ElevenLabs TTS, tiered delivery, the driver speech queue, spoken lines, driver intent parsing |
 | [risk-engine.md](risk-engine.md) | Logistic risk engine: scoring, decision rules, REST API, Postgres storage |
+| [gps.md](gps.md) | Phone GPS: payload, speeding and erratic levels, speed limit lookup, trip start/stop, location in Photon and voice, route on the report card, privacy |
 | [phone-app.md](phone-app.md) | Specification for the Android app (not started): what it must send and do |
 | [persistence.md](persistence.md) | `TripStore` interface, the in-memory stub, and what the Tiger Data implementation must provide |
 
