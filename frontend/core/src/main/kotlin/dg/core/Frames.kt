@@ -74,6 +74,14 @@ sealed interface PhoneFrame {
 
     @Serializable @SerialName("alert")
     data class Alert(val tier: Int, val dominant: Dominant, @SerialName("R") val risk: Double) : PhoneFrame
+
+    /** Speech-to-text result. `context` echoes the `speak.context` we listened after, or "free". */
+    @Serializable @SerialName("utterance")
+    data class Utterance(val text: String, val context: String = "free") : PhoneFrame
+
+    /** Finished playing a `speak` (and its listen window). */
+    @Serializable @SerialName("speak_done")
+    data class SpeakDone(val id: String) : PhoneFrame
 }
 
 /** Backend -> phone. Parsed leniently so unknown frames never crash the app. */
@@ -81,8 +89,11 @@ sealed interface BackendFrame {
     data object Dismissed : BackendFrame
     data class Navigate(val query: String) : BackendFrame
     data class Error(val message: String) : BackendFrame
-    /** Voice is out of scope; speak frames are received and ignored. */
-    data object Speak : BackendFrame
+    /** `audio` is base64 mp3, or "" when the backend's TTS failed (phone then calls ElevenLabs itself). */
+    data class Speak(
+        val id: String, val text: String, val tier: Int, val audio: String,
+        val listenAfterMs: Long, val context: String,
+    ) : BackendFrame
     data class Unknown(val type: String?) : BackendFrame
 }
 
@@ -98,7 +109,14 @@ fun decodeBackendFrame(text: String): BackendFrame {
         "dismissed" -> BackendFrame.Dismissed
         "navigate" -> BackendFrame.Navigate(obj["query"]?.jsonPrimitive?.contentOrNull ?: "rest stop")
         "error" -> BackendFrame.Error(obj["message"]?.jsonPrimitive?.contentOrNull ?: "")
-        "speak" -> BackendFrame.Speak
+        "speak" -> BackendFrame.Speak(
+            id = obj["id"]?.jsonPrimitive?.contentOrNull ?: return BackendFrame.Unknown(type),
+            text = obj["text"]?.jsonPrimitive?.contentOrNull ?: "",
+            tier = obj["tier"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
+            audio = obj["audio"]?.jsonPrimitive?.contentOrNull ?: "",
+            listenAfterMs = obj["listenAfterMs"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
+            context = obj["context"]?.jsonPrimitive?.contentOrNull ?: "free",
+        )
         else -> BackendFrame.Unknown(type)
     }
 }

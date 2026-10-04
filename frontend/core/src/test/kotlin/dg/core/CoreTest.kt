@@ -83,7 +83,11 @@ class CoreTest {
             encodeFrame(PhoneFrame.Alert(70, Dominant.RECKLESS, 72.0)))
         assertEquals("""{"type":"trip_start"}""", encodeFrame(PhoneFrame.TripStart))
         assertTrue(encodeFrame(PhoneFrame.RiskWindow(1, 2.0, 3.0, 4.0)).contains(""""R":2.0"""))
-        assertEquals(BackendFrame.Speak, decodeBackendFrame("""{"type":"speak","id":"1","x":1}"""))
+        assertEquals(BackendFrame.Speak("1", "hi", 70, "QUJD", 8000, "checkin"),
+            decodeBackendFrame("""{"type":"speak","id":"1","text":"hi","tier":70,"audio":"QUJD","listenAfterMs":8000,"context":"checkin"}"""))
+        assertEquals(BackendFrame.Unknown("speak"), decodeBackendFrame("""{"type":"speak","x":1}"""))
+        assertEquals("""{"type":"utterance","text":"im fine","context":"checkin"}""", encodeFrame(PhoneFrame.Utterance("im fine", "checkin")))
+        assertEquals("""{"type":"speak_done","id":"1"}""", encodeFrame(PhoneFrame.SpeakDone("1")))
         assertEquals(BackendFrame.Dismissed, decodeBackendFrame("""{"type":"dismissed"}"""))
         assertEquals(BackendFrame.Navigate("rest stop"), decodeBackendFrame("""{"type":"navigate","query":"rest stop"}"""))
     }

@@ -11,6 +11,7 @@ import dev.driverguardian.net.Conn
 import dev.driverguardian.sensing.FakePresageSource
 import dev.driverguardian.sensing.MotionSource
 import dev.driverguardian.sensing.SmartSpectraPresageSource
+import dev.driverguardian.voice.VoiceLoop
 import dg.core.BackendFrame
 import dg.core.DemoScript
 import dg.core.Dominant
@@ -51,6 +52,7 @@ data class UiState(
     val gateBand: Int = 0,
     val gateHeldSec: Int = 0,
     val cooldownSec: Map<Int, Int> = emptyMap(),
+    val listening: Boolean = false,
 )
 
 /** Owns the trip lifecycle and the 10 s window loop. Phone reports, backend acts. */
@@ -78,6 +80,7 @@ class TripController(app: Application) : AndroidViewModel(app) {
         onFrame = ::onBackend,
     )
     val connection: StateFlow<Conn> = client.state
+    private val voice = VoiceLoop(app, viewModelScope, send = client::send)
 
     // Windows and alert tiers held for the current trip; the report card is computed from these locally.
     private val tripWindows = mutableListOf<PhoneFrame.RiskWindow>()
@@ -87,6 +90,7 @@ class TripController(app: Application) : AndroidViewModel(app) {
     fun clearReport() { _report.value = null }
 
     init {
+        viewModelScope.launch { voice.listening.collect { l -> _ui.value = _ui.value.copy(listening = l) } }
         viewModelScope.launch {
             settings = store.flow.first()
             _settings.value = settings
@@ -137,6 +141,8 @@ class TripController(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun pushToTalk() { viewModelScope.launch { voice.pushToTalk() } }
+
     fun endTrip() {
         val wasRunning = tripJob != null
         tripJob?.cancel(); tripJob = null
@@ -185,6 +191,7 @@ class TripController(app: Application) : AndroidViewModel(app) {
                         weightsDrowsy = model.weights.drowsy.toMap(), weightsReckless = model.weights.reckless.toMap(),
                     ) // cooldowns keep running
                 }
+                is BackendFrame.Speak -> voice.onSpeak(f)
                 is BackendFrame.Navigate -> onNavigate(f.query)
                 is BackendFrame.Error -> android.util.Log.w("Backend", f.message)
                 else -> {}

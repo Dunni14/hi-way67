@@ -49,7 +49,7 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun Root() {
-        val needed = arrayOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION)
+        val needed = arrayOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.RECORD_AUDIO)
         fun granted() = needed.all { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }
         var ok by remember { mutableStateOf(granted()) }
         var asked by remember { mutableStateOf(false) }
@@ -58,7 +58,7 @@ class MainActivity : ComponentActivity() {
 
         if (!ok) {
             Column(Modifier.fillMaxSize().padding(24.dp)) {
-                Text("Driver Guardian needs the camera (to watch for drowsiness) and location (speed). Grant them while parked.")
+                Text("Driver Guardian needs the camera (to watch for drowsiness), location (speed) and microphone (to talk to the copilot). Grant them while parked.")
                 Button(onClick = { launcher.launch(needed) }) { Text("Grant permissions") }
             }
             return
@@ -76,7 +76,7 @@ class MainActivity : ComponentActivity() {
             "settings" -> SettingsScreen(settings, onSave = vm::saveSettings) { screen = "dashcam" }
             else -> DashcamScreen(
                 ui = ui, conn = conn,
-                onStart = vm::startTrip, onEnd = vm::endTrip,
+                onStart = vm::startTrip, onEnd = vm::endTrip, onTalk = vm::pushToTalk,
                 onDebug = { screen = "debug" }, onSettings = { screen = "settings" },
                 liveSensing = !settings.demoMode,
             )

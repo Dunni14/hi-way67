@@ -1,6 +1,5 @@
 package dev.driverguardian.net
 
-import android.util.Log
 import dg.core.BackendFrame
 import dg.core.CLOSE_REPLACED
 import dg.core.PhoneFrame
@@ -83,7 +82,6 @@ class BackendClient(
             override fun onMessage(webSocket: WebSocket, text: String) {
                 note("← $text".take(200))
                 val frame = decodeBackendFrame(text)
-                if (frame is BackendFrame.Speak) { Log.d(TAG, "speak ignored (voice out of scope)"); return }
                 onFrame(frame)
             }
 

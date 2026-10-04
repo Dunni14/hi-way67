@@ -24,6 +24,9 @@ android {
         versionName = "0.1"
         // host:port of the backend (no secrets here). Emulator -> host machine is 10.0.2.2.
         buildConfigField("String", "BACKEND_HOST", "\"10.0.2.2:8787\"")
+        // ElevenLabs: TTS fallback (when a speak frame has no audio) and Scribe speech-to-text.
+        buildConfigField("String", "ELEVENLABS_API_KEY", "\"${localProperties.getProperty("ELEVENLABS_API_KEY", "")}\"")
+        buildConfigField("String", "ELEVENLABS_VOICE_ID", "\"${localProperties.getProperty("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")}\"")
         buildConfigField("String", "PRESAGE_API_KEY", "\"${localProperties.getProperty("PRESAGE_API_KEY", "")}\"")
     }
     buildFeatures { compose = true; buildConfig = true }

@@ -40,7 +40,7 @@ private fun tierColor(tier: Int, R: Double) = when {
 @Composable
 fun DashcamScreen(
     ui: UiState, conn: Conn,
-    onStart: () -> Unit, onEnd: () -> Unit, onDebug: () -> Unit, onSettings: () -> Unit,
+    onStart: () -> Unit, onEnd: () -> Unit, onTalk: () -> Unit, onDebug: () -> Unit, onSettings: () -> Unit,
     liveSensing: Boolean = false,
 ) {
     val parked = !ui.running || ui.speedMph < 3
@@ -71,6 +71,7 @@ fun DashcamScreen(
             // Controls only work while parked; nothing here matters while moving.
             if (ui.running) Button(onClick = onEnd, enabled = parked) { Text("End trip") }
             else Button(onClick = onStart) { Text("Start trip") }
+            if (ui.running) OutlinedButton(onClick = onTalk, enabled = !ui.listening) { Text(if (ui.listening) "Listening…" else "Talk") }
             OutlinedButton(onClick = onSettings, enabled = parked) { Text("Settings") }
             OutlinedButton(onClick = onDebug, enabled = parked) { Text("Debug") }
         }
