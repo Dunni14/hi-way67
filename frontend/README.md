@@ -32,8 +32,13 @@ vs the fixed demo limit, a rounded card with the driver camera (the design shows
 (Start trip is a tap; ending needs a 1.5 s hold on "Hold to end trip" and works at any speed), and four tiles: attention (risk tier), drowsiness (sub-score + yawn count), eye tracking (live eye closure),
 speech (Presage talking / mic listening). Tiles use the design's three states: green value, blue value, red tile.
 The design's second tile is "Distraction"; the app shows drowsiness there because gaze is not measured, and that
-tile has no icon in the design yet. Icons in `app/src/main/res/drawable/` are exported from the Figma file. Stats shows the last report card; Contacts is a placeholder (contacts live in the
+tile has no icon in the design yet, so it uses a Material moon. The avatar on the status pill shows the driver's initial;
+its ring is the backend connection (green, yellow, red). Icons in `app/src/main/res/drawable/` are exported from the Figma file. Stats shows the last report card; Contacts is a placeholder (contacts live in the
 backend's `contacts.json`); Settings links to the Debug screen.
+
+Visual style: the mockups are in [`docs/design/figma/`](../docs/design/figma/README.md). Colors, type styles and the shared
+white card (`Modifier.card()`: soft blue shadow, hairline edge) live in `ui/Theme.kt`; every screen except Debug uses them.
+The Stats tiles use `material-icons-extended` for the icons the Figma export doesn't have.
 
 Yawns: Presage has no yawn metric, so `FaceSampler` (core) runs every face-landmark frame through `YawnDetector`.
 To tune `FaceGeometry.MAR_YAWN` (0.6), turn demo mode off, start a trip and watch `adb logcat -s Presage`: one

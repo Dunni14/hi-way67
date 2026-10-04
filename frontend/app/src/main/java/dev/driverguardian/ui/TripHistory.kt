@@ -75,10 +75,10 @@ fun TripHistoryScreen(api: HistoryApi, driverHint: String, onOpenLastReport: (()
 
     Column(Modifier.fillMaxSize().background(ScreenBg).statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        onBack?.let { TextButton(onClick = it) { Text("‹ Stats", color = Main) } }
+        onBack?.let { TextButton(onClick = it) { Text("‹ Stats", color = Main, fontWeight = FontWeight.SemiBold) } }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Trip history", color = OnSurface, fontSize = 22.sp, fontWeight = FontWeight.Medium)
+                Text("Trip history", style = ScreenTitle)
                 Text(if (driver.isBlank()) "Stored on Tiger Data" else "$driver · stored on Tiger Data", color = SystemText, style = Label)
             }
             TextButton(onClick = { reload++ }) { Text("Refresh", color = Main) }
@@ -106,7 +106,7 @@ private fun TripRowCard(t: TripRow, onClick: () -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             GradeBadge(t.displayGrade, 44)
             Column(Modifier.weight(1f)) {
-                Text(localTime(t.startedAt), color = OnSurface, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                Text(localTime(t.startedAt), color = Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 val parts = listOfNotNull(
                     tripDuration(t) ?: "in progress",
                     t.cardScore?.let { "score %.0f".format(it) },
@@ -129,8 +129,8 @@ fun TripDetailScreen(api: HistoryApi, row: TripRow, onBack: () -> Unit) {
     }
     Column(Modifier.fillMaxSize().background(ScreenBg).statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        TextButton(onClick = onBack) { Text("‹ All trips", color = Main) }
-        Text(localTime(row.startedAt), color = OnSurface, fontSize = 20.sp, fontWeight = FontWeight.Medium)
+        TextButton(onClick = onBack) { Text("‹ All trips", color = Main, fontWeight = FontWeight.SemiBold) }
+        Text(localTime(row.startedAt), color = Ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
         val c = card
         when {
             error != null -> Card { Text("Couldn't load this trip: $error", color = SystemText, fontSize = 14.sp) }
@@ -140,7 +140,7 @@ fun TripDetailScreen(api: HistoryApi, row: TripRow, onBack: () -> Unit) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                         GradeBadge(c.grade, 64)
                         Column {
-                            Text("Safety score %.0f".format(c.score), color = OnSurface, fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                            Text("Safety score %.0f".format(c.score), color = Ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                             Text(
                                 listOf(duration(c.metrics.durationS), "%.1f mi".format(c.metrics.distanceMi), if (c.metrics.nightTrip) "night drive" else null)
                                     .filterNotNull().joinToString(" · ") + if (c.provisional) " · provisional" else "",
@@ -150,7 +150,7 @@ fun TripDetailScreen(api: HistoryApi, row: TripRow, onBack: () -> Unit) {
                     }
                 }
                 Card {
-                    Text("Risk over time", color = OnSurface, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                    Text("Risk over time", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(8.dp))
                     SeriesChart(c, Modifier.fillMaxWidth().height(150.dp))
                     Spacer(Modifier.height(8.dp))
@@ -159,13 +159,13 @@ fun TripDetailScreen(api: HistoryApi, row: TripRow, onBack: () -> Unit) {
                 val alerts = History.alertSummary(c)
                 val reasons = History.overrideSummary(c)
                 Card {
-                    Text("What happened", color = OnSurface, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                    Text("What happened", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                     if (alerts.isEmpty() && reasons.isEmpty()) Fact("Alerts", "none, calm drive")
                     alerts.forEach { (label, n) -> Fact(label, "$n") }
                     reasons.forEach { (label, n) -> Fact(label, "$n×") }
                 }
                 Card {
-                    Text("Drive", color = OnSurface, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                    Text("Drive", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                     Fact("Average speed", "%.0f mph".format(c.metrics.avgSpeedMph))
                     Fact("Top speed", "%.0f mph".format(c.metrics.maxSpeedMph))
                     Fact("Yawns", "%.0f".format(c.metrics.yawns))
@@ -179,7 +179,7 @@ fun TripDetailScreen(api: HistoryApi, row: TripRow, onBack: () -> Unit) {
 
 @Composable
 private fun Card(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Column(modifier.fillMaxWidth().clip(CardShape).background(TabBg).padding(14.dp), content = content)
+    Column(modifier.fillMaxWidth().card().padding(16.dp), content = content)
 }
 
 @Composable
@@ -193,7 +193,7 @@ private fun GradeBadge(grade: String, sizeDp: Int) {
 private fun Fact(label: String, value: String) {
     Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
         Text(label, color = SystemText, fontSize = 14.sp, modifier = Modifier.weight(1f))
-        Text(value, color = OnSurface, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        Text(value, color = Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -201,7 +201,7 @@ private fun Fact(label: String, value: String) {
 @Composable
 private fun SeriesChart(card: TripCard, modifier: Modifier) {
     val pts = card.series
-    Canvas(modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp)).background(Pressed)) {
+    Canvas(modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp)).background(Surface)) {
         fun y(s: Double) = size.height * (1f - (s / 100.0).toFloat().coerceIn(0f, 1f))
         for ((level, c) in listOf(40.0 to Warn, 70.0 to Bad, 85.0 to Bad)) {
             drawLine(c.copy(alpha = 0.3f), Offset(0f, y(level)), Offset(size.width, y(level)), strokeWidth = 2f)
