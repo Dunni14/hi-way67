@@ -137,7 +137,7 @@ class SmartSpectraPresageSource(private val context: Context) : PresageSource {
                     val eyeClosed = f.eyeClosed
                         ?: if (face != null && face.blinkingCount > 0) (if (blinking) 1.0 else 0.0) else null
                     // One line per second for tuning: watch mouth while yawning vs talking.
-                    Log.d(TAG, "face: frames=${f.samples} eyeClosed=${fmt(eyeClosed)} mouthMax=${fmt(f.mouthOpenMax)} " +
+                    Log.d(TAG, "face: frames=${f.samples} eyeClosed=${fmt(eyeClosed)} ear=${fmt(f.earMean)} earMin=${fmt(f.earMin)} mouthMax=${fmt(f.mouthOpenMax)} " +
                         "talking=$talking blink=$blinking valid=$valid" + if (f.yawned) "  >>> YAWN (${sampler.totalYawns} this trip)" else "")
 
                     emit(PresageFrame(

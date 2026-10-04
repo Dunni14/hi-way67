@@ -14,9 +14,12 @@ data class Pt(val x: Double, val y: Double)
 object FaceGeometry {
     const val FULL_MESH_SIZE = 468
 
-    /** Eye aspect ratio at or above this counts as fully open, at or below [EAR_CLOSED] as closed. */
-    const val EAR_OPEN = 0.28
-    const val EAR_CLOSED = 0.18
+    /**
+     * Eye aspect ratio at or above this counts as fully open, at or below [EAR_CLOSED] as closed.
+     * Tuned on a Galaxy S24 held below the face: open eyes read 0.23-0.28, closed 0.04-0.11.
+     */
+    const val EAR_OPEN = 0.22
+    const val EAR_CLOSED = 0.10
 
     /** Mouth openness above this is a yawn candidate. */
     const val MAR_YAWN = 0.6
@@ -31,7 +34,7 @@ object FaceGeometry {
     private const val MOUTH_LEFT = 78
     private const val MOUTH_RIGHT = 308
 
-    /** Eye aspect ratio averaged over both eyes, about 0.3 open and under 0.2 closed. Null if the mesh is incomplete. */
+    /** Eye aspect ratio averaged over both eyes, about 0.25 open and near 0.1 closed. Null if the mesh is incomplete. */
     fun eyeOpenness(points: List<Pt>): Double? {
         if (points.size < FULL_MESH_SIZE) return null
         return (eyeAspectRatio(points, RIGHT_EYE) + eyeAspectRatio(points, LEFT_EYE)) / 2
@@ -65,6 +68,8 @@ data class FaceSummary(
     val eyeClosed: Double?, // mean eye closure 0..1 across the samples
     val mouthOpenMax: Double?, // peak mouth openness, for tuning MAR_YAWN
     val yawned: Boolean,
+    val earMean: Double? = null, // raw eye aspect ratio, for tuning EAR_OPEN / EAR_CLOSED
+    val earMin: Double? = null,
 )
 
 /**
@@ -83,6 +88,8 @@ class FaceSampler(private val yawns: YawnDetector = YawnDetector()) {
     private var closureSum = 0.0
     private var closureN = 0
     private var mouthMax: Double? = null
+    private var earSum = 0.0
+    private var earMin: Double? = null
     private var yawned = false
 
     /** Feed one sample. Returns false if it was a duplicate. */
@@ -93,15 +100,15 @@ class FaceSampler(private val yawns: YawnDetector = YawnDetector()) {
         n++
         val ear = FaceGeometry.eyeOpenness(points)
         val mar = FaceGeometry.mouthOpenness(points)
-        if (ear != null) { closureSum += FaceGeometry.eyeClosure(ear); closureN++ }
+        if (ear != null) { closureSum += FaceGeometry.eyeClosure(ear); closureN++; earSum += ear; earMin = minOf(earMin ?: ear, ear) }
         if (mar != null) mouthMax = maxOf(mouthMax ?: mar, mar)
         if (yawns.update(ts / (unitsPerMs ?: 1000L), mar)) { yawned = true; totalYawns++ }
         return true
     }
 
     fun drain(): FaceSummary {
-        val s = FaceSummary(n, if (closureN > 0) closureSum / closureN else null, mouthMax, yawned)
-        n = 0; closureSum = 0.0; closureN = 0; mouthMax = null; yawned = false
+        val s = FaceSummary(n, if (closureN > 0) closureSum / closureN else null, mouthMax, yawned, if (closureN > 0) earSum / closureN else null, earMin)
+        n = 0; closureSum = 0.0; closureN = 0; mouthMax = null; yawned = false; earSum = 0.0; earMin = null
         return s
     }
 
