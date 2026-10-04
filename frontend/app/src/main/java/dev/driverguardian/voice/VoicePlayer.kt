@@ -20,6 +20,8 @@ import androidx.core.content.ContextCompat
 import dg.core.BackendFrame
 import dg.core.PhoneFrame
 import dg.core.SpeakContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 
 /**
@@ -34,8 +36,14 @@ import java.io.File
  * Everything runs on the main thread (MediaPlayer callbacks and SpeechRecognizer need a looper).
  */
 class VoicePlayer(private val context: Context, private val send: (PhoneFrame) -> Unit) {
+    enum class State { IDLE, SPEAKING, LISTENING }
+
     private val main = Handler(Looper.getMainLooper())
     private var item: Item? = null
+
+    private val _state = MutableStateFlow(State.IDLE)
+    /** What the voice loop is doing, for the dashcam status line. */
+    val state: StateFlow<State> = _state
 
     private var ttsReady = false
     private val tts = TextToSpeech(context) { status -> ttsReady = status == TextToSpeech.SUCCESS }
@@ -61,6 +69,7 @@ class VoicePlayer(private val context: Context, private val send: (PhoneFrame) -
         main.post {
             item?.let { finish(it) } // a new line supersedes anything still playing
             val it = Item(frame).also { item = it }
+            _state.value = State.SPEAKING
             Log.d(TAG, "speak (${frame.context}, tier ${frame.tier}): ${frame.text}")
             if (frame.audio.isEmpty() || !playMp3(it)) speakTts(it)
         }
@@ -138,6 +147,7 @@ class VoicePlayer(private val context: Context, private val send: (PhoneFrame) -
             override fun onPartialResults(partialResults: Bundle?) {}
             override fun onEvent(eventType: Int, params: Bundle?) {}
         })
+        _state.value = State.LISTENING
         rec.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
@@ -154,7 +164,7 @@ class VoicePlayer(private val context: Context, private val send: (PhoneFrame) -
         it.recognizer?.destroy(); it.recognizer = null
         it.player?.let { p -> runCatching { if (p.isPlaying) p.stop() }; p.release() }; it.player = null
         it.file?.delete(); it.file = null
-        if (item === it) item = null
+        if (item === it) { item = null; _state.value = State.IDLE }
         send(PhoneFrame.SpeakDone(it.frame.id))
     }
 

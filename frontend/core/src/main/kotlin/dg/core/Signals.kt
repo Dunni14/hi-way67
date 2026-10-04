@@ -12,6 +12,9 @@ data class PresageFrame(
     val breathing: Double? = null,
     val stress: Double? = null, // stress / anger probability
     val gazeOffRoad: Boolean = false,
+    // Shown live on the dashcam and debug views; not part of the risk score.
+    val talking: Boolean? = null, // Presage talking detection
+    val mouthOpen: Double? = null, // peak mouth openness this second (FaceGeometry), for tuning the yawn threshold
 )
 
 /** Rolling average over a time span. */

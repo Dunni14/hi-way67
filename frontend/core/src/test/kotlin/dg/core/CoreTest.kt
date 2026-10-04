@@ -134,6 +134,40 @@ class CoreTest {
         assertFalse(y.update(8_000, null)) // missing face resets
     }
 
+    /** Batches of landmark samples, re-delivered and in any timestamp unit, still yield one yawn. */
+    @Test fun faceSamplerFindsYawnInBatches() {
+        for (unit in listOf(1L, 1_000L, 1_000_000L)) { // ms, µs, ns
+            val s = FaceSampler()
+            val closed = mesh(eyeGap = 3.0, lipGap = 0.5)
+            val yawning = mesh(eyeGap = 2.0, lipGap = 8.0)
+            val frames = (0 until 150).map { i -> (1_000_000L + i * 33L) * unit to if (i in 30..120) yawning else closed } // 5 s at 30 fps
+            val summaries = mutableListOf<FaceSummary>()
+            frames.chunked(30).forEach { batch ->
+                batch.forEach { (ts, p) -> s.add(ts, p) }
+                batch.forEach { (ts, p) -> assertFalse(s.add(ts, p)) } // re-delivered batch is ignored
+                summaries += s.drain()
+            }
+            assertEquals(unit, s.unitsPerMs, "unit")
+            assertEquals(1, s.totalYawns, "unit $unit")
+            assertEquals(1, summaries.count { it.yawned })
+            assertTrue(summaries.all { it.samples == 30 })
+            assertEquals(0.8, summaries[2].mouthOpenMax!!, 1e-9)
+            assertTrue(summaries[0].eyeClosed!! < 0.1)
+        }
+    }
+
+    /** At ~30 fps a real yawn has jittery frames; short dips must not split it, speech must not count. */
+    @Test fun yawnAtFrameRate() {
+        val y = YawnDetector()
+        var yawns = 0
+        // 2 s of speech: mouth flaps open for 200 ms at a time.
+        for (t in 0L until 2_000L step 33) if (y.update(t, if ((t / 200) % 2 == 0L) 0.7 else 0.2)) yawns++
+        assertEquals(0, yawns, "speech counted as a yawn")
+        // 3 s yawn with a dropped/jittery frame every 300 ms.
+        for (t in 5_000L until 8_000L step 33) if (y.update(t, if (t % 300 < 33) 0.4 else 0.8)) yawns++
+        assertEquals(1, yawns)
+    }
+
     @Test fun reconnectBackoff() {
         val p = ReconnectPolicy()
         assertEquals(listOf(1000L, 2000, 4000, 8000, 16000, 30000, 30000), List(7) { p.nextDelayMs() })
