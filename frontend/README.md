@@ -2,7 +2,7 @@
 
 Brief: [frontend.md](frontend.md). Wire format: [../backend/PROTOCOL.md](../backend/PROTOCOL.md).
 
-- `core/`: pure Kotlin/JVM, no Android. Frames, signals/baseline/smoothing, `RiskModel`, `AlertGate`, scripted demo, JVM tests.
+- `core/`: pure Kotlin/JVM, no Android. Frames (protocol mirror), `WindowAggregator` (raw signals per 10 s window), face geometry (eye closure, closure runs, yawns), scripted demo and `DemoClock`, report card, JVM tests. **No scoring**: the backend's risk engine scores every window and decides every alert.
 - `../android/`: standalone Presage SmartSpectra demo (face-metrics overlay). Reference for the SDK setup the app uses; not part of this Gradle build.
 - `app/`: Android shell, portrait. CameraX preview, OkHttp `BackendClient` (reconnect, buffered windows), GPS/IMU, alarm, `VoicePlayer` (plays the backend's ElevenLabs audio, listens for replies), Compose UI (dashcam, debug, settings, report card).
 
@@ -18,17 +18,21 @@ Needs JDK 17–21 (not 25), a `PRESAGE_API_KEY` line in `local.properties` (see 
     cd ../backend && npm run dev     # NO_SPECTRUM=1 to skip iMessage/Telegram
 
 Set the host in the app's Settings: `10.0.2.2:8787` (default) for the emulator, the laptop's LAN or Tailscale IP for a phone, or `127.0.0.1:8787` after `adb reverse tcp:8787 tcp:8787`.
-Demo mode is on by default: scripted driver signals at a fake 65 mph. The whole pipeline (calibration, smoothing, alert
-hold, script) runs on `DemoClock`: 12× real time until the first alert, then 1.5×, so there's time to answer each spoken
-check-in. Calibration takes 5 s and tiers 40, 70, 85 fire at about 0:15, 0:42 and 1:22. Cooldowns stay at 2 real
-minutes, so the alarm and group alert don't repeat sooner. The rates are constants in `core/.../DemoScript.kt`; use
-`RealClock` for the original 3:00 / 3:40 / 4:40 timeline. Turn demo mode off to use the real camera (Presage), GPS and IMU.
+Demo mode is on by default: scripted driver signals at a fake 65 mph. `DemoClock` sends windows faster (12× until the
+first alert, then 1.5×) but stamps them in real time, so the engine's window-counted rules speed up while its cooldowns
+stay real. With the engine's rules that gives a tier-2 warning at about 0:15 (answerable: say "I'm fine") and a
+microsleep tier 3 (urgent voice, alarm, contacts) at about 1:08. `./gradlew :core:test` writes
+`core/build/demo-windows.json`; `npx tsx src/dev/replayDemo.ts` in `../backend` replays it through the real engine.
+Turn demo mode off to use the real camera (Presage), GPS and IMU.
 
 Allow the microphone on first launch so spoken check-ins can hear "I'm fine" and roast replies. Logs: `adb logcat -s Presage Voice`.
 
-Drive tab (follows the Figma wireframe): status pill, current speed vs the fixed demo limit, Start/End trip, and four
-tiles: attention (risk tier), eye tracking (live eye closure), drowsiness (sub-score + yawn count), speech activity
-(Presage talking / mic listening). Stats shows the last report card; Contacts is a placeholder (contacts live in the
+Drive tab (follows the Figma "UI" design: light theme, white rounded tiles, icon tab bar): status pill, current speed
+vs the fixed demo limit, a rounded card with the driver camera (the design shows a map there) and the trip button
+(Start trip is a tap; ending needs a 1.5 s hold on "Hold to end trip" and works at any speed), and four tiles: attention (risk tier), drowsiness (sub-score + yawn count), eye tracking (live eye closure),
+speech (Presage talking / mic listening). Tiles use the design's three states: green value, blue value, red tile.
+The design's second tile is "Distraction"; the app shows drowsiness there because gaze is not measured, and that
+tile has no icon in the design yet. Icons in `app/src/main/res/drawable/` are exported from the Figma file. Stats shows the last report card; Contacts is a placeholder (contacts live in the
 backend's `contacts.json`); Settings links to the Debug screen.
 
 Yawns: Presage has no yawn metric, so `FaceSampler` (core) runs every face-landmark frame through `YawnDetector`.

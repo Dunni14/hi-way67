@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Exported from the Figma file (MHacks | AutoAI); tint at the call site. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="41.2969dp" android:height="39.6552dp"
+    android:viewportWidth="41.2969" android:viewportHeight="39.6552">
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="6" android:strokeLineCap="round" android:pathData="M3 12.0294V3H12.0294" />
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="6" android:strokeLineCap="round" android:pathData="M29.2674 3L38.2969 3L38.2969 12.0294" />
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="6" android:strokeLineCap="round" android:pathData="M38.2969 27.6257V36.6552H29.2674" />
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="6" android:strokeLineCap="round" android:pathData="M12.0294 36.6552L3 36.6552L3 27.6257" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M12.8501,19.4172a8.20858,8.20858 0 1,0 16.4172,0a8.20858,8.20858 0 1,0 -16.4172,0Z" />
+</vector>

@@ -16,11 +16,13 @@ import { PgBanditStore } from "./bandit/store.ts";
 import { BanditService } from "./bandit/service.ts";
 import { policyFacts } from "./agent/answer.ts";
 
-// TODO(tiger-data): swap in the Timescale-backed TripStore when it's ready.
+// Live trip facts for the chat agent (recent trips, contact preferences). Scored trips live in the risk store.
 const store = new InMemoryTripStore();
-const { onPhone, onChat, onRiskEvaluation, setInsights } = createOrchestrator(store);
+const { onPhone, onChat, onRiskEvaluation, setInsights, setRisk } = createOrchestrator(store);
 
-// Risk engine REST API; needs Postgres. FAKE_DB=1 or an unreachable DATABASE_URL uses the local seeded one.
+// Risk engine: scores every phone window and decides every alert, so it always runs. It needs
+// Postgres: DATABASE_URL (Tiger Data), or the local seeded in-process one when DATABASE_URL is
+// unset or unreachable, or FAKE_DB=1.
 let fakeBanditDb: Db | undefined;
 async function openRiskStore(): Promise<PgRiskStore | undefined> {
   if (config.databaseUrl && !config.fakeDb) {
@@ -35,7 +37,7 @@ async function openRiskStore(): Promise<PgRiskStore | undefined> {
       await pool.end().catch(() => {});
     }
   } else if (!config.fakeDb) {
-    return undefined;
+    console.log("[risk] DATABASE_URL not set; using the local fake database (nothing is persisted)");
   }
   const { openFakeDb } = await import("./dev/fakeDb.ts");
   const fake = await openFakeDb({ dir: config.fakeDbDir });
@@ -58,10 +60,11 @@ if (riskStore) {
   const riskService = new RiskService(riskStore, undefined, (_tripId, ev, intervention) => onRiskEvaluation(ev, intervention), bandit);
   // The driver id the phone sends to the REST API is the driver's name.
   if (bandit) setInsights(async () => policyFacts(trip.driverName, await riskService.driverPolicy(trip.driverName)));
+  setRisk(riskService);
   riskRoutes = createRiskRoutes(riskService);
   console.log(`[risk] adaptive recommendations ${bandit ? "on" : "off (TIGER_DATABASE_URL not set)"}`);
 } else {
-  console.log("[risk] REST API disabled (set DATABASE_URL or FAKE_DB=1)");
+  console.error("[risk] no risk engine: phone windows will not be scored");
 }
 
 startPhoneServer(config.port, onPhone, () => ({

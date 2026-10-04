@@ -4,7 +4,7 @@ Every feature from the [root README](../README.md), checked against the code on 
 
 **Legend:** **Done**: implemented and wired end to end · **Built**: implemented and unit-tested, not yet verified on a device · **Partial**: some of it exists · **Stub**: an interface or placeholder exists, no real implementation · **Not started**: no code in the repo.
 
-The phone app is [`frontend/`](../frontend) (Driver Guardian). It computes the score, runs the phone half of the decision tree, plays the backend's voice and listens for replies. It builds and its `core` logic is unit-tested, but it hasn't been verified end to end on a device yet. [`android/`](../android) (CoolVitals) is a standalone Presage demo with a face-metrics debug overlay, kept as an SDK reference. Details: [phone-app.md](phone-app.md).
+The phone app is [`frontend/`](../frontend) (Driver Guardian). It **senses and displays**: every 10 s it sends raw signals, and the backend's **risk engine** scores them, decides every alert, stores the trip and drives voice and contacts (see [architecture.md](architecture.md#who-owns-the-decision-tree)). The app builds and its `core` logic is unit-tested; the backend path is tested end to end with `fake-phone`; the full loop is not yet verified on a device. [`android/`](../android) (CoolVitals) is a standalone Presage demo kept as an SDK reference.
 
 ## 1. Driver sensing (Presage)
 
@@ -14,10 +14,11 @@ The phone app is [`frontend/`](../frontend) (Driver Guardian). It computes the s
 | Eye closure from landmarks | Built | `core/FaceGeometry.kt`: eye aspect ratio → closure 0..1 (assumes the MediaPipe 478-point layout). |
 | Yawn detection | Built | Presage has no yawn output (its face metrics are landmarks, blinking, talking, expressions). `FaceSampler` runs every landmark frame (MediaPipe Face Mesh, confirmed in the SDK) through `YawnDetector`: mouth openness ≥ 0.6 held 1.5 s, ≤ 150 ms jitter tolerated, one per 5 s. Emits the `yawn` event. Threshold to be tuned on device (Debug screen / `adb logcat -s Presage`). |
 | Nod detection | Not started | `nod` event never set. |
-| 60 s per-trip baseline | Built | `frontend/core` `TripEngine`; "Calibrating…" on screen, no alerts meanwhile. |
-| 10 s rolling-average smoothing | Built | `SignalSmoother`. |
-| Drop low-confidence frames | Built | Frames without a valid face are dropped and signals go missing ("Can't see driver"). |
-| Drowsy / reckless / distracted state derivation | Partial | Drowsy and reckless sub-scores are sent. Distracted is computed for the debug view only: the protocol has no field for it. |
+| Longest continuous eye closure | Built | `FaceSampler` tracks closure runs across seconds; sent as `longest_eye_closure_s`, which drives the engine's microsleep override (≥ 1.5 s → tier 3). |
+| 60 s per-trip baseline | Done (backend) | Engine: first 6 windows set baseline heart and breathing rate; tier 0 meanwhile. |
+| Smoothing | Done (backend) | Engine: rolling mean over 3 windows before scoring. |
+| Drop low-confidence frames | Built | Phone `WindowAggregator` ignores frames without a valid face; the engine goes `degraded` (speed and motion only) after 3 faceless windows. |
+| Drowsy / reckless / distracted state derivation | Done (backend) | Engine levels: drowsy, agitated, speeding, phone, distracted, erratic. The phone doesn't send gaze or phone-in-hand yet, so distracted and phone stay 0. |
 
 ## 2. Pre-trip check (stretch)
 
@@ -30,13 +31,13 @@ The phone app is [`frontend/`](../frontend) (Driver Guardian). It computes the s
 
 | Feature | Status | Notes |
 |---|---|---|
-| Feature vector **x**, two weight vectors, base risk `r = w · x` | Built | `frontend/core` `RiskModel`, 13 features sent in `risk_window.features`. |
-| Context/speed multiplier `m` | Built | Kids in car + speed. Medication and experience fixed at 0. |
+| Score | Done (backend) | Engine: z = Σ ln(odds ratio) × level (cited SHRP 2 / AAA values in `weights.json`), capped at ln 50, scaled 0–100. The phone scorer was removed. |
+| Context multiplier | Done (backend) | Kids in car / low experience +15 % each. |
 | Server-side logistic risk engine (REST + Postgres) | Done (backend) | Odds-ratio weights, baseline, overrides, cooldowns, feedback, report. See [risk-engine.md](risk-engine.md). The phone must call it; the legacy phone-computed path still works. |
 | Trip report card, expression observations, adaptive notify threshold | Done (backend) | Stored per window and per trip; the care index lowers or raises the score needed to text contacts. Decisions and feedback rewards are logged in `decision_log` (separate from the bandit's `bandit_events`); no learner trains on it yet. See [risk-engine.md](risk-engine.md). |
 | Adaptive recommendations (LinUCB bandit, Tiger Data) | Done (backend) | Picks the intervention within tier 1/2; `intervention` on the windows response, `GET /drivers/{id}/policy`. Off without `TIGER_DATABASE_URL`. The in-process voice path speaks the chosen intervention; REST clients choose their own script from `intervention.id`. `family_voice_warning` needs `ELEVENLABS_FAMILY_VOICE_ID`. See [risk-engine.md](risk-engine.md#adaptive-recommendations-contextual-bandit). |
-| Hand-set weights | Built | Phone path: `WeightStore.defaults`. The engine's weights live in `backend/src/risk/weights.json`. |
-| "I'm fine" gradient step on **w** | Built | Backend parses the phrase and sends `dismissed`; the frontend nudges the dominant weights and shows before/after on the Debug screen. |
+| Weights | Done (backend) | `backend/src/risk/weights.json`. Drowsy OR 3.4 is flagged "check paper"; erratic is a placeholder. |
+| "I'm fine" learning | Done (backend) | Recorded as false-alarm feedback: the dominant factor's weight ×0.95 for this driver (clamped 0.5–1.5, stored), bandit penalty. The phone shows the new multiplier. |
 | Ridge regression fitting | Not started | Roadmap in the README too. |
 
 ## 4. Decision tree
@@ -45,17 +46,17 @@ The tree is split between phone and backend. See [architecture.md](architecture.
 
 | Rule | Status | Where |
 |---|---|---|
-| Tier thresholds 40 / 70 / 85, drowsy vs reckless dominance | Built | Frontend `AlertGate`, sends `alert`. |
-| 15 s hold before firing | Built | `AlertGate`. |
-| 2 min cooldown per tier | Built | `AlertGate`. The backend has **no** cooldown of its own on this path. |
-| "70+ sustained for 2 minutes" escalates to 85 | Built | `AlertGate`. |
+| Tiers 1 / 2 / 3 at score 40 / 70 / 85, drowsy vs reckless dominance | Done (backend) | Engine `decision.ts`. |
+| Hold before firing | Done (backend) | A score tier must hold 2 windows. |
+| Cooldowns | Done (backend) | Voice 2 min per tier, contacts 10 min (by window timestamps). |
+| Overrides | Done (backend) | Microsleep → tier 3; drowsy ≥ 0.6 for 3 windows → tier 2, 12 windows → tier 3; tier 2 for 12 windows → tier 3. |
 | R < 40: log only | Done | Every `risk_window` is stored; no action. |
 | 40 / 70: voice only, never the group chat | Done | `orchestrator.ts` `onAlert`. |
-| Kids in car: 70 treated as 85 | Done | `orchestrator.ts` `onAlert`. |
+| Kids in car raises the tier | Done (backend) | Engine raises any active tier by one (set at trip start). |
 | 85, sharing on: voice + group alert + roast (drowsy only) | Done | `escalate()`: alert to the group, location to guardians only. Reckless 85 alerts but does not start a roast. |
 | 85, sharing off: ask driver by voice for permission | Done | `permissionLine()` then a 5 s listen. |
-| "I'm fine" dismiss | Built | Backend + frontend mic and weight nudge. |
-| Loud bundled alarm audio file at the alarm stage | Built | `frontend` `AlarmPlayer`; `alarm.wav` is a placeholder tone. |
+| "I'm fine" dismiss | Built | Phone mic → backend → engine feedback. |
+| Loud bundled alarm audio file at the alarm stage | Built | Phone `AlarmPlayer` on an evaluation with `voice_urgent`; `alarm.wav` is a placeholder tone. |
 
 ## 5. Voice (ElevenLabs)
 
@@ -71,7 +72,7 @@ The tree is split between phone and backend. See [architecture.md](architecture.
 | Listen 5 s after a message, relay reply | Built | Frontend runs `SpeechRecognizer` for `listenAfterMs` and sends `utterance` with the same `context`. Needs the mic permission. |
 | Roasts go through immediately at high drowsiness | Done | Roasts are enqueued as priority. |
 | Family messages go through immediately at high drowsiness | Not started | Normal family messages are always queued in order, regardless of risk. |
-| Full-screen hands-free dashcam UI | Built | Portrait, wireframe layout: status pill (speaking / listening / yawn / can't see driver), speed vs limit, attention · eye tracking · drowsiness · speech tiles, drive/stats/contacts/settings tabs; only Drive while moving. |
+| Full-screen hands-free dashcam UI | Built | Portrait, styled after the Figma "UI" design (light theme, icon tab bar): status pill (speaking / listening / yawn / can't see driver), speed vs limit, camera card (a map in the design), attention · drowsiness · eye tracking · speech tiles, drive/stats/contacts/settings tabs; only Drive while moving. Not yet checked on a device. |
 
 ## 6. Photon iMessage agent
 
@@ -96,8 +97,8 @@ The tree is split between phone and backend. See [architecture.md](architecture.
 
 | Feature | Status | Notes |
 |---|---|---|
-| Every 10 s window persisted | Stub | `InMemoryTripStore` holds windows in an array. No Tiger Data / Timescale client, no schema, no connection string. `index.ts` carries a `TODO(tiger-data)`. (The risk engine and bandit have their own Postgres / Tiger Data stores.) |
-| Report card: line chart, letter grade, advice | Built | Frontend `ReportCardScreen` after "End trip", computed from the windows the phone held. |
+| Every 10 s window persisted | Done (backend) | Each phone window is stored by the risk engine (`windows`, `events` hypertables on Tiger Data via `DATABASE_URL`; in-memory fake DB when unset). |
+| Report card: line chart, letter grade, advice | Built | Phone `ReportCardScreen`, built from the engine's evaluations. The engine also serves `GET /trips/{id}/report`. |
 | Weekly trends | Not started | |
 
 ## 8. Surroundings (stretch)
@@ -133,7 +134,7 @@ These come from reading the code. None of them break the type check (`npm run ty
 1. **Driver name drift.** The phone's `hello.driverName` updates trip state, but the classifier prompt, the answer prompt and the `/start` greeting use `DRIVER_NAME` from `.env`. If the two differ, the agent uses both names.
 2. **Telegram DMs need the contact to write first.** Telegram bots can't open a DM, so `dm()` only reaches a Telegram contact who has messaged the bot privately since the last restart; otherwise it logs a warning and skips them. Group posts work once the group is bound.
 3. **Arrival pings ignore sharing mode.** With sharing set to `never`, the trip summary is suppressed, but contacts who asked to be told on arrival still get a DM.
-4. **No backend cooldown.** Repeated 85 `alert`s each post a fresh alert. Flicker prevention relies entirely on the phone.
+4. **Settings are fixed per engine trip.** Kids in car and sharing mode are read when the engine trip starts; toggling them mid-trip only affects the chat side until the next trip.
 5. **Permission prompt never expires.** If the driver never answers "Do you want me to let your family know?", the next yes/no utterance, even minutes later, is treated as the answer.
 6. **Everything is in memory.** A restart loses trip history, contact preferences, the captured group chat and the DM space cache. Someone must post in the group (or send `/start`) again after a restart.
 7. **`/start` is not allowlisted.** Any member of any group can bind the agent's group chat with `/start`.

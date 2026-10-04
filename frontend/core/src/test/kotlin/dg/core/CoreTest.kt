@@ -1,90 +1,71 @@
 package dg.core
 
+import java.io.File
 import kotlin.test.*
 
 class CoreTest {
-    private fun x(vararg p: Pair<String, Double?>): Features =
-        FEATURES.associateWith { 0.0 } + mapOf(*p)
+    private fun sample(i: Int, score: Double, tier: Int = 0, alerted: Boolean = false, dominant: Dominant = Dominant.DROWSY, ev: List<String> = emptyList()) =
+        TripSample(ts = i * 10_000L, score = score, tier = tier, dominant = dominant, alerted = alerted, events = ev)
 
-    @Test fun speedRaisesScore() {
-        val yawns = x("yawns" to 0.75, "eye_closure" to 0.2)
-        val fast = RiskModel().score(yawns, 70.0, false).R
-        val slow = RiskModel().score(yawns, 20.0, false).R
-        assertTrue(fast > slow * 1.4, "fast=$fast slow=$slow")
-    }
-
-    @Test fun kidsRaiseMultiplier() {
-        assertTrue(RiskModel.multiplier(60.0, true) > RiskModel.multiplier(60.0, false))
-    }
-
-    @Test fun clampedAndRenormalized() {
-        val all = FEATURES.associateWith { 1.0 }
-        assertEquals(100.0, RiskModel().score(all, 100.0, true).R)
-        val half = x("yawns" to 0.5, "eye_closure" to null, "long_blinks" to null, "head_nod" to 0.5)
-        val blind = RiskModel().score(half, 0.0, false)
-        val sane = RiskModel().score(half + mapOf("eye_closure" to 0.0, "long_blinks" to 0.0), 0.0, false)
-        assertTrue(blind.R > sane.R)
-    }
-
-    @Test fun gateRules() {
-        val g = AlertGate()
-        assertNull(g.update(0, 50.0, true)) // calibration
-        assertNull(g.update(10_000, 50.0, false)) // band starts
-        assertNull(g.update(20_000, 50.0, false)) // 10 s held
-        assertEquals(40, g.update(25_000, 50.0, false)) // 15 s held
-        assertNull(g.update(30_000, 50.0, false)) // cooldown
-        assertNull(g.update(35_000, 10.0, false)) // dip resets
-        assertNull(g.update(40_000, 75.0, false))
-        assertEquals(70, g.update(55_000, 75.0, false)) // 40 cooldown does not block 70
-        assertNull(g.update(60_000, 75.0, false))
-        assertEquals(85, g.update(175_000, 75.0, false)) // 70 for 120 s -> 85
-        assertNull(g.update(180_000, 75.0, false))
-    }
-
-    private fun win(i: Int, r: Double, d: Double = r, rk: Double = 0.0, ev: List<String> = emptyList()) =
-        PhoneFrame.RiskWindow(ts = i * 10_000L, risk = r, drowsy = d, reckless = rk, events = ev)
-
-    @Test fun reportCardEmpty() = assertNull(ReportCard.build(emptyList(), emptyList()))
+    @Test fun reportCardEmpty() = assertNull(ReportCard.build(emptyList()))
 
     @Test fun reportCardCalmTripGetsA() {
-        val c = ReportCard.build(List(30) { win(it, 5.0) }, emptyList())!!
+        val c = ReportCard.build(List(31) { sample(it, 5.0) })!!
         assertEquals("A", c.grade)
         assertEquals(5, c.durationMin)
-        assertEquals(30, c.series.size)
+        assertEquals(31, c.series.size)
         assertTrue(c.alertsByTier.isEmpty())
     }
 
     @Test fun reportCardRiskyTripIsPenalized() {
-        val ws = List(30) { win(it, if (it < 12) 20.0 else 90.0, ev = if (it == 20) listOf(DriverEvent.YAWN) else emptyList()) }
-        val c = ReportCard.build(ws, listOf(40, 70, 85, 85))!!
+        val ws = List(30) { i ->
+            when {
+                i < 12 -> sample(i, 20.0)
+                i == 12 -> sample(i, 60.0, tier = 2, alerted = true, ev = listOf(DriverEvent.YAWN))
+                i == 20 -> sample(i, 90.0, tier = 3, alerted = true)
+                else -> sample(i, 90.0, tier = 3)
+            }
+        }
+        val c = ReportCard.build(ws)!!
         assertTrue(c.grade in listOf("D", "F"), c.grade)
         assertEquals(90.0, c.peakRisk)
-        assertEquals(mapOf(40 to 1, 70 to 1, 85 to 2), c.alertsByTier)
+        assertEquals(mapOf(2 to 1, 3 to 1), c.alertsByTier)
         assertEquals(mapOf(DriverEvent.YAWN to 1), c.eventCounts)
         assertTrue(c.advice.contains("break"))
     }
 
     @Test fun reportCardRecklessAdvice() {
-        val ws = List(10) { win(it, 80.0, d = 10.0, rk = 80.0, ev = listOf(DriverEvent.HARD_BRAKE)) }
-        assertTrue(ReportCard.build(ws, listOf(70))!!.advice.contains("braking"))
-    }
-
-    @Test fun nudgeNeverNegative() {
-        val m = RiskModel()
-        m.score(FEATURES.associateWith { 1.0 }, 0.0, false)
-        repeat(100) { m.weights.nudge(m.latestDominant, m.latestX) }
-        assertTrue(m.weights.of(m.latestDominant).values.all { it >= 0.0 })
+        val ws = List(10) { sample(it, 80.0, tier = 2, dominant = Dominant.RECKLESS, ev = listOf(DriverEvent.HARD_BRAKE)) }
+        assertTrue(ReportCard.build(ws)!!.advice.contains("braking"))
     }
 
     @Test fun framesMatchProtocol() {
         assertEquals("""{"type":"hello","driverName":"A","sharingMode":"high_only","kidsInCar":false}""",
             encodeFrame(PhoneFrame.Hello("A")))
-        assertEquals("""{"type":"alert","tier":70,"dominant":"reckless","R":72.0}""",
-            encodeFrame(PhoneFrame.Alert(70, Dominant.RECKLESS, 72.0)))
         assertEquals("""{"type":"trip_start"}""", encodeFrame(PhoneFrame.TripStart))
-        assertTrue(encodeFrame(PhoneFrame.RiskWindow(1, 2.0, 3.0, 4.0)).contains(""""R":2.0"""))
-        assertEquals(BackendFrame.Dismissed, decodeBackendFrame("""{"type":"dismissed"}"""))
+        val w = PhoneFrame.RiskWindow(ts = 1, speed = 65.0, events = listOf(DriverEvent.YAWN),
+            signals = WindowSignals(faceVisible = true, eyeClosureFrac = 0.4, longestEyeClosureS = 2.2, yawns = 1, speedMph = 65.0))
+        assertEquals(
+            """{"type":"risk_window","ts":1,"speed":65.0,"events":["yawn"],"signals":{"face_visible":true,"eye_closure_frac":0.4,"longest_eye_closure_s":2.2,"yawns":1,"speed_mph":65.0}}""",
+            encodeFrame(w),
+        )
+        assertEquals(BackendFrame.Dismissed(), decodeBackendFrame("""{"type":"dismissed"}"""))
+        assertEquals(BackendFrame.Dismissed("drowsy", 0.95), decodeBackendFrame("""{"type":"dismissed","factor":"drowsy","multiplier":0.95}"""))
         assertEquals(BackendFrame.Navigate("rest stop"), decodeBackendFrame("""{"type":"navigate","query":"rest stop"}"""))
+    }
+
+    @Test fun evaluationDecodes() {
+        val e = decodeBackendFrame(
+            """{"type":"evaluation","ts":5,"score":22.5,"tier":2,"dominant":"drowsy","levels":{"drowsy":0.67,"speeding":0},""" +
+                """"override":"drowsy_sustained_3","degraded":false,"actions":["voice_warning"],"calibrating":false}""",
+        )
+        assertEquals(
+            BackendFrame.Evaluation(5, 22.5, 2, Dominant.DROWSY, mapOf("drowsy" to 0.67, "speeding" to 0.0), "drowsy_sustained_3", false, listOf("voice_warning"), false),
+            e,
+        )
+        val quiet = decodeBackendFrame("""{"type":"evaluation","ts":1,"score":0,"tier":0,"dominant":"drowsy","levels":{},"override":null,"degraded":false,"actions":["none"],"calibrating":true}""")
+        assertEquals(null, (quiet as BackendFrame.Evaluation).override)
+        assertTrue(quiet.calibrating)
     }
 
     @Test fun voiceFramesMatchProtocol() {
@@ -97,6 +78,33 @@ class CoreTest {
         assertEquals("""{"type":"utterance","text":"I'm fine","context":"checkin"}""",
             encodeFrame(PhoneFrame.Utterance("I'm fine", SpeakContext.CHECKIN)))
         assertEquals("""{"type":"utterance","text":"hi","context":"free"}""", encodeFrame(PhoneFrame.Utterance("hi")))
+    }
+
+    @Test fun aggregatorSummarizesAWindow() {
+        val a = WindowAggregator()
+        a.onMotion(70.0, 42.0, -83.0)
+        for (s in 1..10) a.onPresage(PresageFrame(tsMs = s * 1000L, eyeClosed = if (s <= 5) 0.0 else 1.0, heartRate = 70.0, breathing = 14.0,
+            yawn = s == 3, closedRunMs = if (s == 8) 2_500 else 100))
+        a.onPresage(PresageFrame(tsMs = 11_000, confidence = 0.1, eyeClosed = 1.0, yawn = true)) // no face: ignored
+        a.onImuEvent(DriverEvent.HARD_BRAKE)
+        val w = a.close(12_000)
+        val s = w.signals
+        assertEquals(true, s.faceVisible)
+        assertEquals(0.5, s.eyeClosureFrac!!, 1e-9)
+        assertEquals(2.5, s.longestEyeClosureS!!, 1e-9)
+        assertEquals(1, s.yawns)
+        assertEquals(70.0, s.heartRate)
+        assertEquals(1, s.hardBrakes)
+        assertEquals(70.0, s.speedMph)
+        assertEquals(SPEED_LIMIT_MPH, s.speedLimitMph)
+        assertEquals(listOf(DriverEvent.YAWN, DriverEvent.HARD_BRAKE), w.events)
+        assertEquals(42.0, w.lat)
+        // Next window starts empty; a window with frames but no usable face says so.
+        a.onPresage(PresageFrame(tsMs = 13_000, confidence = 0.0))
+        val hidden = a.close(22_000).signals
+        assertEquals(false, hidden.faceVisible)
+        assertNull(hidden.eyeClosureFrac)
+        assertNull(hidden.longestEyeClosureS)
     }
 
     /** Synthetic 478-point mesh: eyes with the given lid gap (width 10), mouth with the given lip gap (width 10). */
@@ -120,6 +128,23 @@ class CoreTest {
         assertEquals(0.05, FaceGeometry.mouthOpenness(open)!!, 1e-9)
         assertEquals(0.7, FaceGeometry.mouthOpenness(mesh(3.0, 7.0))!!, 1e-9)
         assertNull(FaceGeometry.eyeOpenness(open.take(100)))
+    }
+
+    /** A 30 s closure reads as one long run in every second it spans, not as 1 s pieces. */
+    @Test fun faceSamplerTracksLongEyeClosure() {
+        val s = FaceSampler()
+        val open = mesh(eyeGap = 3.0, lipGap = 0.5)
+        val shut = mesh(eyeGap = 0.5, lipGap = 0.5)
+        val longest = mutableListOf<Long>()
+        var t = 0L
+        for (sec in 0 until 40) {
+            repeat(30) { t += 33; s.add(t * 1000, if (sec in 5 until 35) shut else open) } // µs timestamps
+            longest += s.drain().longestClosedMs
+        }
+        assertTrue(longest.take(5).all { it == 0L })
+        assertTrue(longest[6] in 1_900L..2_100L, "1 s into the closure: ${longest[6]}")
+        assertTrue(longest[34] >= 29_000L, "end of a 30 s closure: ${longest[34]}")
+        assertEquals(0L, longest[36])
     }
 
     @Test fun yawnNeedsSustainedOpenMouthAndRefractory() {
@@ -173,53 +198,34 @@ class CoreTest {
         assertEquals(listOf(1000L, 2000, 4000, 8000, 16000, 30000, 30000), List(7) { p.nextDelayMs() })
     }
 
-    /** Demo mode as TripController runs it: DemoClock pacing, cooldown kept at 2 real minutes. */
-    @Test fun demoPacingLeavesTimeToReply() {
-        val clock = DemoClock
-        val engine = TripEngine(gate = AlertGate(cooldownMs = (120_000L * clock.steadyRate).toLong()))
-        val t0 = 1_000_000L
-        engine.start(t0)
-        engine.onMotion(DemoScript.DEMO_SPEED_MPH, 42.28, -83.74)
-        val fired = mutableListOf<Pair<Int, Double>>() // tier to real seconds
-        var s = 0
-        var win = 0
-        while (clock.realMs(s * 1000L) < 300_000) { // 5 real minutes of 10 s script windows
-            win++
-            while (s < win * 10) { s++; engine.onPresage(DemoScript.frame(t0 + s * 1000L, s.toDouble())) }
-            engine.closeWindow(t0 + s * 1000L, false, 14.0).alertTier?.let { fired += it to clock.realMs(s * 1000L) / 1000.0 }
-        }
-        println("demo alerts (tier to real s): $fired")
-        assertEquals(listOf(40, 70, 85), fired.take(3).map { it.first })
-        assertTrue(fired[0].second <= 16.0, "first check-in at ${fired[0].second}s")
-        assertTrue(fired[1].second - fired[0].second >= 20.0, "only ${fired[1].second - fired[0].second}s to answer the check-in")
-        assertTrue(fired[2].second - fired[1].second >= 20.0, "only ${fired[2].second - fired[1].second}s between 70 and 85")
-        assertTrue(fired[2].second <= 100.0, "85 at ${fired[2].second}s")
-        // Repeats (alarm, group alert) stay at least 2 real minutes apart.
-        fired.drop(3).forEach { assertTrue(it.second - fired[2].second >= 119.0, "repeat 85 at ${it.second}s") }
-    }
-
     @Test fun demoClockRoundTrips() {
         assertEquals(15_000, DemoClock.realMs(180_000))
         assertEquals(180_000, DemoClock.scriptMs(15_000))
         for (ms in listOf(0L, 5_000, 15_000, 40_000, 120_000)) assertEquals(ms, DemoClock.realMs(DemoClock.scriptMs(ms)))
     }
 
-    /** Scripted run must hit 40 / 70 / 85 in order with drowsy dominant. */
-    @Test fun scriptedRunHitsAllTiers() {
-        val engine = TripEngine()
-        val t0 = 1_000_000L
-        engine.start(t0)
-        engine.onMotion(DemoScript.DEMO_SPEED_MPH, 42.28, -83.74)
-        val fired = mutableListOf<Pair<Int, Dominant>>()
+    /**
+     * The demo profile as TripController sends it: one window per 10 script seconds, stamped in real
+     * time. Checks the shape the engine relies on, and writes build/demo-windows.json so the backend
+     * can replay it through the real engine (`npx tsx src/dev/replayDemo.ts` in backend/).
+     */
+    @Test fun demoWindowsMatchTheEngineProfile() {
+        val a = WindowAggregator()
+        a.onMotion(DemoScript.DEMO_SPEED_MPH, 42.2808, -83.743)
+        val t0 = 1_800_000_000_000L
+        val windows = mutableListOf<PhoneFrame.RiskWindow>()
         var s = 0
-        for (win in 1..80) {
-            while (s < win * 10) { s++; engine.onPresage(DemoScript.frame(t0 + s * 1000L, s.toDouble())) }
-            val out = engine.closeWindow(t0 + s * 1000L, false, 14.0)
-            println("t=${s}s R=%.0f drowsy=%.0f reckless=%.0f m=%.2f calib=${out.calibrating} alert=${out.alertTier}".format(out.result.R, out.result.drowsy, out.result.reckless, out.result.m))
-            out.alertTier?.let { fired += it to out.dominant }
+        for (win in 1..30) {
+            while (s < win * 10) { s++; a.onPresage(DemoScript.frame(t0 + s * 1000L, s.toDouble())) }
+            windows += a.close(t0 + DemoClock.realMs(s * 1000L) + win) // real-time stamp, unique per window
         }
-        assertEquals(listOf(40, 70, 85), fired.take(3).map { it.first })
-        assertTrue(fired.drop(3).all { it.first == 85 })
-        assertTrue(fired.all { it.second == Dominant.DROWSY })
+        val calm = windows.take(13)
+        val drowsy = windows.drop(13)
+        assertTrue(calm.all { it.signals.eyeClosureFrac!! < 0.1 && it.signals.yawns == 0 })
+        assertTrue(drowsy.all { it.signals.eyeClosureFrac!! > 0.35 && it.signals.breathingRate == 10.5 && it.signals.yawns == 1 })
+        assertEquals(26, windows.indexOfFirst { it.signals.longestEyeClosureS!! >= 1.5 } + 1, "microsleep window")
+        assertTrue(windows.zipWithNext().all { (x, y) -> y.ts > x.ts })
+        File("build").mkdirs()
+        File("build/demo-windows.json").writeText(windows.joinToString(",\n", "[\n", "\n]") { encodeFrame(it) })
     }
 }

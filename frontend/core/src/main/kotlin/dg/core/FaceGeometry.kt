@@ -14,9 +14,12 @@ data class Pt(val x: Double, val y: Double)
 object FaceGeometry {
     const val FULL_MESH_SIZE = 468
 
-    /** Eye aspect ratio at or above this counts as fully open, at or below [EAR_CLOSED] as closed. */
-    const val EAR_OPEN = 0.28
-    const val EAR_CLOSED = 0.18
+    /**
+     * Eye aspect ratio at or above this counts as fully open, at or below [EAR_CLOSED] as closed.
+     * Tuned on a Galaxy S24 held below the face: open eyes read 0.23-0.28, closed 0.04-0.11.
+     */
+    const val EAR_OPEN = 0.22
+    const val EAR_CLOSED = 0.10
 
     /** Mouth openness above this is a yawn candidate. */
     const val MAR_YAWN = 0.6
@@ -31,7 +34,7 @@ object FaceGeometry {
     private const val MOUTH_LEFT = 78
     private const val MOUTH_RIGHT = 308
 
-    /** Eye aspect ratio averaged over both eyes, about 0.3 open and under 0.2 closed. Null if the mesh is incomplete. */
+    /** Eye aspect ratio averaged over both eyes, about 0.25 open and near 0.1 closed. Null if the mesh is incomplete. */
     fun eyeOpenness(points: List<Pt>): Double? {
         if (points.size < FULL_MESH_SIZE) return null
         return (eyeAspectRatio(points, RIGHT_EYE) + eyeAspectRatio(points, LEFT_EYE)) / 2
@@ -65,6 +68,10 @@ data class FaceSummary(
     val eyeClosed: Double?, // mean eye closure 0..1 across the samples
     val mouthOpenMax: Double?, // peak mouth openness, for tuning MAR_YAWN
     val yawned: Boolean,
+    /** Longest continuous eye closure touched since the last drain; a run still in progress counts its full length so far. */
+    val longestClosedMs: Long = 0,
+    val earMean: Double? = null, // raw eye aspect ratio, for tuning EAR_OPEN / EAR_CLOSED
+    val earMin: Double? = null,
 )
 
 /**
@@ -83,7 +90,11 @@ class FaceSampler(private val yawns: YawnDetector = YawnDetector()) {
     private var closureSum = 0.0
     private var closureN = 0
     private var mouthMax: Double? = null
+    private var earSum = 0.0
+    private var earMin: Double? = null
     private var yawned = false
+    private var closedSinceMs: Long? = null // start of the current eyes-closed run
+    private var periodClosedMs = 0L
 
     /** Feed one sample. Returns false if it was a duplicate. */
     fun add(ts: Long, points: List<Pt>): Boolean {
@@ -91,18 +102,36 @@ class FaceSampler(private val yawns: YawnDetector = YawnDetector()) {
         if (unitsPerMs == null && lastTs != Long.MIN_VALUE) unitsPerMs = unitFromFrameGap(ts - lastTs)
         lastTs = ts
         n++
+        val tMs = ts / (unitsPerMs ?: 1000L)
         val ear = FaceGeometry.eyeOpenness(points)
         val mar = FaceGeometry.mouthOpenness(points)
-        if (ear != null) { closureSum += FaceGeometry.eyeClosure(ear); closureN++ }
+        if (ear != null) {
+            val closure = FaceGeometry.eyeClosure(ear)
+            closureSum += closure; closureN++; earSum += ear; earMin = minOf(earMin ?: ear, ear)
+            if (closure >= CLOSED) {
+                val since = closedSinceMs ?: tMs.also { closedSinceMs = it }
+                periodClosedMs = maxOf(periodClosedMs, tMs - since)
+            } else {
+                closedSinceMs = null
+            }
+        }
         if (mar != null) mouthMax = maxOf(mouthMax ?: mar, mar)
-        if (yawns.update(ts / (unitsPerMs ?: 1000L), mar)) { yawned = true; totalYawns++ }
+        if (yawns.update(tMs, mar)) { yawned = true; totalYawns++ }
         return true
     }
 
     fun drain(): FaceSummary {
-        val s = FaceSummary(n, if (closureN > 0) closureSum / closureN else null, mouthMax, yawned)
-        n = 0; closureSum = 0.0; closureN = 0; mouthMax = null; yawned = false
+        val s = FaceSummary(
+            samples = n, eyeClosed = if (closureN > 0) closureSum / closureN else null, mouthOpenMax = mouthMax, yawned = yawned,
+            longestClosedMs = periodClosedMs, earMean = if (closureN > 0) earSum / closureN else null, earMin = earMin,
+        )
+        n = 0; closureSum = 0.0; closureN = 0; mouthMax = null; yawned = false; periodClosedMs = 0; earSum = 0.0; earMin = null
         return s
+    }
+
+    private companion object {
+        /** Eye closure (0..1) at or above this counts as "eyes closed" for continuous-closure runs. */
+        const val CLOSED = 0.7
     }
 
     /** Camera frames are 15-60 ms apart; pick the unit that makes the gap land there. */

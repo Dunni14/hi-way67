@@ -48,7 +48,8 @@ const INTERVENTION_LINES: Record<string, string[]> = {
   suggest_rest_stop: ["You look tired. Want me to find the nearest rest stop?"],
   calm_slowdown: ["Easy there. Let's ease off the gas a little."],
   breathing_prompt: ["Let's take two slow breaths together. In through the nose, and slowly out. Once more."],
-  firm_warning: ["Slow down and focus on the road right now. This is not safe."],
+  // Picked for drowsy and reckless driving alike, so the line must fit both.
+  firm_warning: ["This is not safe. Pull over at the next safe spot and take a break."],
   family_voice_warning: ["Hey, it's us. Please slow down and be safe. We want you home in one piece."],
 };
 
